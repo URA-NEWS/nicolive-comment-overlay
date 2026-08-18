@@ -370,10 +370,12 @@
 
   // ---------- 状態表示 ----------
   let speedInitialized = false;
+  let currentKickSlug = '';
   async function refreshStatus() {
     try {
       const res = await fetch('/api/overlay/status');
       const data = await res.json();
+      currentKickSlug = data.kickSlug || '';
       document.getElementById('status').innerHTML =
         `配信ID: <b>${data.liveId || '未設定'}</b><br>取得済みコメント数: <b>${data.count}</b>`;
 
@@ -956,6 +958,30 @@
   refreshStatus();
   setInterval(refreshStatus, 5000);
   pollLog();
+
+  // ---------- Kickフォロワー数(ドックを開いているPC側から直接取得) ----------
+  // サーバー(Render等)のIPだとKickの非公式APIがCloudflareにブロックされるため、
+  // このドック画面(配信者のPCのブラウザ)から直接fetchしてサーバーに送る。
+  async function pollKickFollowersFromBrowser() {
+    if (!currentKickSlug) return;
+    try {
+      const res = await fetch(`https://kick.com/api/v2/channels/${encodeURIComponent(currentKickSlug)}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      const count = Number(d && d.followers_count);
+      if (Number.isFinite(count)) {
+        fetch('/api/overlay/kick-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ followerCount: count }),
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+  pollKickFollowersFromBrowser();
+  setInterval(pollKickFollowersFromBrowser, 20000);
 
   // ---------- アイテム履歴 ----------
   async function loadGiftLog() {

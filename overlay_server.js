@@ -1059,6 +1059,19 @@ check();
     return;
   }
 
+  // ---- Kickフォロワー数をブラウザ(ドック)経由で受け取る ----
+  // Render等のクラウドIPはKickの非公式API(v2)がCloudflareでブロックするため、
+  // ドックを開いているPC(通常の回線)側からfetchして送ってもらう方式。
+  if (url.pathname === '/api/overlay/kick-report' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (Number.isFinite(Number(body.followerCount))) {
+      kickFollowerCount = Number(body.followerCount);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   if (url.pathname === '/api/overlay/comments' && req.method === 'GET') {
     const afterId = Number(url.searchParams.get('afterId') || '0');
     const newComments = recentComments.filter(
