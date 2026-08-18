@@ -1,0 +1,14 @@
+node_modules/
+
+# ローカル設定・秘密情報
+.env
+overlay_config.json
+
+# 実行時に生成されるデータ・デバッグファイル
+gift_log.json
+debug_last.json
+debug_gift.json
+
+# OS/エディタ
+.DS_Store
+Thumbs.db

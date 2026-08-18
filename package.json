@@ -1,0 +1,13 @@
+{
+  "name": "nicolive-comment-overlay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ニコ生風コメントオーバーレイ - OBS用オーバーレイサーバー",
+  "main": "overlay_server.js",
+  "scripts": {
+    "start": "node overlay_server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

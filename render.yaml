@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: nicolive-comment-overlay
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: KICK_CLIENT_ID
+        sync: false
+      - key: KICK_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ニコ生風オーバーレイ 設定</title>
+<style>
+  body {
+    margin: 0;
+    padding: 16px;
+    background: #111;
+    color: #eee;
+    font-family: "Noto Sans JP", "Yu Gothic UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    font-size: 14px;
+  }
+  h1 {
+    font-size: 15px;
+    margin: 0 0 12px;
+    color: #fff;
+  }
+  h2 {
+    font-size: 13px;
+    margin: 18px 0 8px;
+    color: #ccc;
+    border-top: 1px solid #333;
+    padding-top: 12px;
+  }
+  label {
+    display: block;
+    margin-bottom: 6px;
+    color: #aaa;
+  }
+  input[type=text], input[type=number] {
+    box-sizing: border-box;
+    padding: 8px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  input[type=text] { width: 100%; }
+  input[type=number] { width: 80px; }
+  button {
+    background: #e53e3e;
+    border: none;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #c53030; }
+  button.small {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .status {
+    margin-top: 14px;
+    padding: 10px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    line-height: 1.6;
+  }
+  .status b { color: #fff; }
+  .url-box { margin-top: 14px; }
+  .url-box input { margin-bottom: 4px; }
+  .hint { color: #777; font-size: 12px; }
+  .msg { margin-top: 8px; font-size: 12px; }
+  .msg.ok { color: #6cce6c; }
+  .msg.err { color: #ff6b6b; }
+
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .speed-row input[type=range] {
+    flex: 1;
+  }
+
+  .log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .log-header label {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #aaa;
+    cursor: pointer;
+  }
+  #log {
+    height: 260px;
+    overflow-y: auto;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .log-item { padding: 2px 0; word-break: break-all; }
+  .log-item .name { color: #888; margin-right: 4px; }
+  .log-item.item { color: #ffd54f; }
+  .pending-badge {
+    background: #e53e3e;
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+    display: none;
+  }
+  /* 折りたたみセクション */
+  h2.acc {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.15s;
+  }
+  h2.acc:hover { color: #fff; }
+  h2.acc::before {
+    content: '▸';
+    font-size: 11px;
+    color: #e53e3e;
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+  h2.acc.open::before { transform: rotate(90deg); }
+  .accBody { display: none; padding-bottom: 4px; }
+  .accBody.open { display: block; }
+  .subhead {
+    font-size: 13px;
+    color: #aaa;
+    font-weight: 700;
+    margin: 14px 0 8px;
+  }
+  .accBody > .subhead:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+<h1>ニコ生風オーバーレイ 設定</h1>
+
+<label for="liveUrl">配信URL（ふわっち / Kick どちらでもOK・自動判別）</label>
+<input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... または https://kick.com/...">
+<button onclick="setLiveId()">設定</button>
+<div class="msg" id="msg"></div>
+<div id="kickStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+
+<label style="margin-top:12px">ヘッダーに表示するプラットフォーム</label>
+<div class="speed-row" style="gap:14px;margin-bottom:6px">
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="showFw" checked> ふわっち
+  </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="showKick" checked> Kick
+  </label>
+</div>
+<label>コメント欄に流すプラットフォーム</label>
+<div class="speed-row" style="gap:14px">
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="radio" name="commentSource" value="fw" checked> ふわっち
+  </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="radio" name="commentSource" value="kick"> Kick
+  </label>
+</div>
+<div class="hint">フォロワー数・閲覧数のヘッダーは両方同時に表示されます</div>
+
+<h2 class="acc">クイズ（ミリオネア風）</h2>
+<div class="accBody"><label>問題文</label>
+<input type="text" id="qzQ" placeholder="例: ベートーベンの「運命」の冒頭が表すとされるものは？">
+<label>A</label>
+<input type="text" id="qzA" placeholder="砕け散る波の音">
+<label>B</label>
+<input type="text" id="qzB" placeholder="扉をたたく音">
+<label>C（任意）</label>
+<input type="text" id="qzC" placeholder="女性の叫び声">
+<label>D（任意）</label>
+<input type="text" id="qzD" placeholder="落雷の音">
+<label>正解</label>
+<div class="speed-row" style="gap:14px">
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="qzC0" value="A" checked> A</label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="qzC0" value="B"> B</label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="qzC0" value="C"> C</label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="qzC0" value="D"> D</label>
+</div>
+<div class="speed-row" style="gap:8px;align-items:center;margin-top:8px">
+  <label style="margin:0">オーディエンス時間</label>
+  <input type="number" id="qzDur" value="60" min="10" max="300" style="width:76px;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:4px;color:#fff">
+  <span style="color:#aaa">秒</span>
+</div>
+<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+  <button onclick="qzShow()">出題</button>
+  <button onclick="qzAudience()">オーディエンス</button>
+  <button class="small" onclick="qzReveal()">正解発表</button>
+  <button class="small" onclick="qzClear()">非表示</button>
+</div>
+<div class="msg" id="qzMsg"></div>
+<div id="qzStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">「オーディエンス」を押すとカウントダウンが始まり、その間のコメント（A〜D）だけを集計します。時間切れで自動開票され最多得票が金色に光り、「正解発表」で正解が緑に光ります</div>
+</div>
+
+<h2 class="acc">フォロワー目標＆プレゼント</h2>
+<div class="accBody"><label>目標フォロワー数</label>
+<input type="number" id="goalTarget" placeholder="例: 15000" min="0">
+<label>1フォロワーあたりの金額（円）</label>
+<input type="number" id="goalRate" value="1" min="0" step="0.1">
+<div style="display:flex;gap:8px;margin-top:6px">
+  <button onclick="goalShow()">表示</button>
+  <button class="small" onclick="goalHide()">隠す</button>
+</div>
+<div class="msg" id="goalMsg"></div>
+<div id="goalStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">現在の総フォロワー数 × 金額 が賞金として表示されます</div>
+</div>
+
+<h2 class="acc">トークのお題</h2>
+<div class="accBody">
+<div style="display:flex;gap:8px;margin-bottom:10px">
+  <button onclick="aiTopics()">AIでお題を提案</button>
+  <button class="small" onclick="toggleApiKey()">APIキー設定</button>
+</div>
+<div id="apiKeyBox" style="display:none;margin-bottom:10px">
+  <input type="password" id="geminiKey" placeholder="Gemini APIキー">
+  <button class="small" onclick="saveApiKey()">保存</button>
+  <div class="hint">課金を紐付けていない新規プロジェクトのキーを使用してください（無料枠で動作）</div>
+</div>
+<div id="aiTopicList" style="margin-bottom:10px"></div><input type="text" id="topicInput" placeholder="例: 今までで一番ヤバかった出来事は？">
+<div style="display:flex;gap:8px;margin-top:6px">
+  <button onclick="topicShow()">表示</button>
+  <button class="small" onclick="topicHide()">隠す</button>
+</div>
+<div class="msg" id="topicMsg"></div>
+<div id="topicStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+</div>
+
+<h2 class="acc">アンケート</h2>
+<div class="accBody"><label>A の選択肢</label>
+<input type="text" id="svA" placeholder="例: 乗らない">
+<label>B の選択肢</label>
+<input type="text" id="svB" placeholder="例: 乗る">
+<label>C の選択肢（任意）</label>
+<input type="text" id="svC" placeholder="空欄なら使いません">
+<label>D の選択肢（任意）</label>
+<input type="text" id="svD" placeholder="空欄なら使いません">
+<div class="speed-row" style="gap:8px;align-items:center;margin-top:6px">
+  <label style="margin:0">制限時間</label>
+  <input type="number" id="svDur" value="60" min="10" max="600" style="width:80px;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:4px;color:#fff">
+  <span style="color:#aaa">秒</span>
+</div>
+<div style="margin-top:8px;display:flex;gap:8px">
+  <button onclick="svStart()">開始</button>
+  <button class="small" onclick="svStop()">締切</button>
+  <button class="small" onclick="svClear()">非表示</button>
+</div>
+<div class="msg" id="svMsg"></div>
+<div id="svProgWrap" style="display:none;margin-top:10px">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+    <span style="font-size:12px;color:#ff8c1a;font-weight:700">集計中</span>
+    <span id="svProgTime" style="font-size:20px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums"></span>
+  </div>
+  <div style="height:6px;background:#1a1a1a;border-radius:999px;overflow:hidden">
+    <div id="svProgFill" style="height:100%;width:100%;background:linear-gradient(90deg,#ff8c1a,#ffb347);border-radius:999px;transition:width 0.25s linear"></div>
+  </div>
+</div>
+<div id="svStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">視聴者がコメントで「A」「B」「C」「D」と投稿すると集計されます（1人1票・入力した選択肢のみ有効）</div>
+</div>
+
+<h2 class="acc">設定</h2>
+<div class="accBody">
+<div class="subhead">流れるスピード</div>
+<div class="speed-row">
+  <input type="range" id="speedRange" min="2" max="20" step="0.5" value="7">
+  <span id="speedValue">7.0</span> 秒
+</div>
+<div class="hint">数値が小さいほど速く流れます（画面を横切る時間）</div>
+
+<div class="subhead">コメント背景の濃さ</div>
+<div class="speed-row">
+  <input type="range" id="opRange" min="0" max="100" step="5" value="55">
+  <span id="opValue">55</span> %
+</div>
+<div class="hint">0% = 完全に透明 / 100% = 真っ黒（縦型は背景、ニコ生風は文字の濃さに反映）</div>
+
+<div class="subhead">表示モード</div>
+<div class="speed-row" style="gap:12px">
+  <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="radio" name="displayMode" value="nico" checked> ニコ生風（流れる）
+  </label>
+  <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="radio" name="displayMode" value="vertical"> 縦型
+  </label>
+</div>
+
+<div class="subhead">縦型コメント欄</div>
+<label>表示位置</label>
+<div class="speed-row" style="gap:12px">
+  <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="radio" name="verticalPos" value="left"> 左端
+  </label>
+  <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="radio" name="verticalPos" value="right" checked> 右端
+  </label>
+</div>
+</div>
+
+<h2 class="acc">状態</h2>
+<div class="accBody">
+<div class="status" id="status">読み込み中...</div>
+
+<div class="url-box">
+  <label>OBSブラウザソースに登録するURL（これ1つだけでOK）</label>
+  <input type="text" id="autoUrl" readonly>
+  <div class="hint">↑をコピーしてOBSの「ブラウザ」ソースに貼り付けてください（背景は透明）</div>
+</div>
+</div>
+
+<h2>アイテム履歴</h2>
+<div class="log-header">
+  <span style="font-size:12px;color:#aaa">サーバー再起動後も残ります</span>
+  <button class="small" onclick="clearGiftLog()">クリア</button>
+</div>
+<div id="giftLog" style="height:200px;overflow-y:auto;background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:6px 8px;font-size:12px;line-height:1.8;"></div>
+
+<h2>コメントログ</h2>
+<div class="log-header">
+  <label><input type="checkbox" id="pauseCheck"> 一時停止して読み返す</label>
+  <span class="pending-badge" id="pendingBadge">新着 0件</span>
+</div>
+<div id="log"></div>
+
+<script>
+  const BASE = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:3941';
+  document.getElementById('autoUrl').value = BASE + '/overlay-auto';
+
+  // 表示モード切り替え
+  let displayModeInitialized = false;
+  document.querySelectorAll('input[name="displayMode"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      try {
+        await fetch('/api/overlay/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayMode: radio.value }),
+        });
+      } catch (e) {}
+    });
+  });
+
+  // 縦型の表示位置切り替え
+  let verticalPosInitialized = false;
+  document.querySelectorAll('input[name="verticalPos"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      try {
+        await fetch('/api/overlay/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verticalPos: radio.value }),
+        });
+      } catch (e) {}
+    });
+  });
+
+  // ---------- 状態表示 ----------
+  let speedInitialized = false;
+  async function refreshStatus() {
+    try {
+      const res = await fetch('/api/overlay/status');
+      const data = await res.json();
+      document.getElementById('status').innerHTML =
+        `配信ID: <b>${data.liveId || '未設定'}</b><br>取得済みコメント数: <b>${data.count}</b>`;
+
+      qzRender(data.quiz);
+      goalRender(data);
+      topicRender(data);
+      svRender(data.survey);
+
+      // Kick状態
+      const kickStatusEl = document.getElementById('kickStatus');
+      if (data.kickSlug) {
+        kickStatusEl.textContent = data.kickConnected
+          ? `Kick接続中: ${data.kickSlug}`
+          : `Kick接続待ち: ${data.kickSlug}`;
+        kickStatusEl.style.color = data.kickConnected ? '#6cce6c' : '#aaa';
+      } else {
+        kickStatusEl.textContent = 'Kick未設定';
+        kickStatusEl.style.color = '#888';
+      }
+
+      if (!speedInitialized) {
+        document.getElementById('speedRange').value = data.speed;
+        document.getElementById('speedValue').textContent = Number(data.speed).toFixed(1);
+        if (data.bgOpacity !== undefined) {
+          opRange.value = data.bgOpacity;
+          opValue.textContent = data.bgOpacity;
+        }
+        speedInitialized = true;
+      }
+
+      if (!verticalPosInitialized && data.verticalPos) {
+        const r = document.querySelector(`input[name="verticalPos"][value="${data.verticalPos}"]`);
+        if (r) r.checked = true;
+        verticalPosInitialized = true;
+      }
+
+      if (!headerVisInitialized && data.showFw !== undefined) {
+        document.getElementById('showFw').checked = data.showFw;
+        document.getElementById('showKick').checked = data.showKick;
+        headerVisInitialized = true;
+      }
+
+      if (!commentSourceInitialized && data.commentSource) {
+        const rc = document.querySelector(`input[name="commentSource"][value="${data.commentSource}"]`);
+        if (rc) rc.checked = true;
+        commentSourceInitialized = true;
+      }
+
+      if (!displayModeInitialized && data.displayMode) {
+        const r2 = document.querySelector(`input[name="displayMode"][value="${data.displayMode}"]`);
+        if (r2) r2.checked = true;
+        displayModeInitialized = true;
+      }
+    } catch (e) {
+      document.getElementById('status').textContent = 'サーバーに接続できません';
+    }
+  }
+
+  // ---------- 配信URL設定 ----------
+  async function setLiveId() {
+    const input = document.getElementById('liveUrl').value.trim();
+    const msg = document.getElementById('msg');
+    msg.textContent = '';
+    msg.className = 'msg';
+    if (!input) return;
+    try {
+      let body;
+      if (/kick\.com/i.test(input) || /^[a-zA-Z0-9_]+$/.test(input) && !/^\d+$/.test(input)) {
+        // Kick (URLまたは英字スラッグ)
+        body = { kickSlug: input };
+      } else {
+        // ふわっち (URLまたは数字ID)
+        body = { liveUrl: input };
+      }
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        msg.textContent = body.kickSlug !== undefined
+          ? `Kick設定: ${data.kickSlug} (接続中...)`
+          : `ふわっち設定完了: 配信ID ${data.liveId}`;
+        msg.className = 'msg ok';
+        refreshStatus();
+      } else {
+        msg.textContent = data.error || 'エラー';
+        msg.className = 'msg err';
+      }
+    } catch (e) {
+      msg.textContent = '通信エラー(サーバーが起動しているか確認)';
+      msg.className = 'msg err';
+    }
+  }
+
+  // ---------- コメントソース切り替え ----------
+  document.querySelectorAll('input[name="commentSource"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      try {
+        await fetch('/api/overlay/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commentSource: radio.value }),
+        });
+      } catch (e) {}
+    });
+  });
+  let commentSourceInitialized = false;
+  let headerVisInitialized = false;
+
+  document.getElementById('showFw').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showFw: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+  document.getElementById('showKick').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showKick: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+
+  // ---------- セクション開閉 ----------
+  document.querySelectorAll('h2.acc').forEach((h) => {
+    h.addEventListener('click', () => {
+      const body = h.nextElementSibling;
+      if (!body || !body.classList.contains('accBody')) return;
+      const open = body.classList.toggle('open');
+      h.classList.toggle('open', open);
+    });
+  });
+
+  // ---------- クイズ ----------
+  async function qzShow() {
+    const question = document.getElementById('qzQ').value.trim();
+    const options = ['qzA', 'qzB', 'qzC', 'qzD'].map(id => document.getElementById(id).value.trim());
+    const correct = document.querySelector('input[name="qzC0"]:checked').value;
+    const msg = document.getElementById('qzMsg');
+    if (!question || !options[0] || !options[1]) {
+      msg.textContent = '問題文と A・B は必須です';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      const res = await fetch('/api/overlay/quiz/show', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, options, correct }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        msg.textContent = '出題しました';
+        msg.className = 'msg ok';
+      } else {
+        msg.textContent = d.error || 'エラー';
+        msg.className = 'msg err';
+      }
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function qzAudience() {
+    const duration = Number(document.getElementById('qzDur').value) || 60;
+    const msg = document.getElementById('qzMsg');
+    try {
+      const res = await fetch('/api/overlay/quiz/audience', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        msg.textContent = 'オーディエンス投票を開始しました';
+        msg.className = 'msg ok';
+      } else {
+        msg.textContent = d.error || 'エラー';
+        msg.className = 'msg err';
+      }
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function qzAudienceStop() {
+    try {
+      await fetch('/api/overlay/quiz/audience-stop', { method: 'POST' });
+      document.getElementById('qzMsg').textContent = '開票しました';
+      document.getElementById('qzMsg').className = 'msg ok';
+    } catch (e) {}
+  }
+
+  async function qzReveal() {
+    try {
+      await fetch('/api/overlay/quiz/reveal', { method: 'POST' });
+      document.getElementById('qzMsg').textContent = '正解を発表しました';
+      document.getElementById('qzMsg').className = 'msg ok';
+    } catch (e) {}
+  }
+
+  async function qzClear() {
+    try {
+      await fetch('/api/overlay/quiz/clear', { method: 'POST' });
+      document.getElementById('qzMsg').textContent = '非表示にしました';
+      document.getElementById('qzMsg').className = 'msg';
+    } catch (e) {}
+  }
+
+  function qzRender(q) {
+    const el = document.getElementById('qzStatus');
+    if (!q) { el.textContent = 'クイズなし'; return; }
+    let state;
+    if (q.revealed) state = `正解発表済み（正解: ${q.correct || '未設定'}）`;
+    else if (q.audience === 'voting') state = `<b style="color:#ff8c1a">オーディエンス投票中（残り${q.audienceRemain}秒）</b>`;
+    else if (q.audience === 'done') state = '開票済み（正解発表待ち）';
+    else state = '出題中（オーディエンス未開始）';
+    const counts = (q.audience === 'done' || q.revealed)
+      ? q.results.map(r => `${r.key}: <b>${r.count}</b>票`).join(' / ') + ` / 合計 ${q.total}`
+      : '（開票まで非公開）';
+    el.innerHTML = `${state}<br>${counts}`;
+  }
+
+  // ---------- フォロワー目標 ----------
+  async function goalShow() {
+    const goalTarget = Number(document.getElementById('goalTarget').value) || 0;
+    const goalRate = Number(document.getElementById('goalRate').value) || 0;
+    const msg = document.getElementById('goalMsg');
+    if (goalTarget <= 0) {
+      msg.textContent = '目標フォロワー数を入力してください';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goalTarget, goalRate, goalVisible: true }),
+      });
+      msg.textContent = '表示しました';
+      msg.className = 'msg ok';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function goalHide() {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goalVisible: false }),
+      });
+      document.getElementById('goalMsg').textContent = '隠しました';
+      document.getElementById('goalMsg').className = 'msg';
+    } catch (e) {}
+  }
+
+  let goalInitialized = false;
+  function goalRender(data) {
+    const el = document.getElementById('goalStatus');
+    if (!goalInitialized) {
+      if (data.goalTarget) document.getElementById('goalTarget').value = data.goalTarget;
+      if (data.goalRate !== undefined) document.getElementById('goalRate').value = data.goalRate;
+      goalInitialized = true;
+    }
+    if (data.goalVisible && data.goal) {
+      const g = data.goal;
+      const prize = Math.round((g.current || 0) * g.rate);
+      const remain = Math.max(0, g.target - (g.current || 0));
+      el.innerHTML = `表示中: <b style="color:#ffd54f">¥${prize.toLocaleString()}</b><br>`
+        + `${(g.current || 0).toLocaleString()} / ${g.target.toLocaleString()}人`
+        + (remain > 0 ? `（あと${remain.toLocaleString()}人）` : '（達成！）');
+    } else {
+      el.textContent = '非表示';
+    }
+  }
+
+  // ---------- AIお題生成 ----------
+  function toggleApiKey() {
+    const box = document.getElementById('apiKeyBox');
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function saveApiKey() {
+    const geminiApiKey = document.getElementById('geminiKey').value.trim();
+    const msg = document.getElementById('topicMsg');
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geminiApiKey }),
+      });
+      msg.textContent = 'APIキーを保存しました';
+      msg.className = 'msg ok';
+      document.getElementById('apiKeyBox').style.display = 'none';
+      document.getElementById('geminiKey').value = '';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function aiTopics() {
+    const list = document.getElementById('aiTopicList');
+    const msg = document.getElementById('topicMsg');
+    list.innerHTML = '<div style="color:#888;font-size:12px">生成中...</div>';
+    msg.textContent = '';
+    try {
+      const res = await fetch('/api/overlay/topic/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: 3 }),
+      });
+      const d = await res.json();
+      if (!d.ok) {
+        list.innerHTML = '';
+        msg.textContent = d.error || 'エラー';
+        msg.className = 'msg err';
+        return;
+      }
+      list.innerHTML = d.topics.map((t) => {
+        const esc = t.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        return `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+          <div style="flex:1;background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:7px 10px;font-size:13px">${t}</div>
+          <button class="small" onclick="pickTopic('${esc}')">採用</button>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '';
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  function pickTopic(t) {
+    document.getElementById('topicInput').value = t;
+    topicShow();
+  }
+
+  // ---------- トークのお題 ----------
+  async function topicShow() {
+    const topic = document.getElementById('topicInput').value.trim();
+    const msg = document.getElementById('topicMsg');
+    if (!topic) {
+      msg.textContent = 'お題を入力してください';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, topicVisible: true }),
+      });
+      msg.textContent = '表示しました';
+      msg.className = 'msg ok';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function topicHide() {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topicVisible: false }),
+      });
+      document.getElementById('topicMsg').textContent = '隠しました';
+      document.getElementById('topicMsg').className = 'msg';
+    } catch (e) {}
+  }
+
+  let topicInitialized = false;
+  function topicRender(data) {
+    const el = document.getElementById('topicStatus');
+    if (data.topicVisible && data.topicRaw) {
+      el.innerHTML = `表示中: <b style="color:#ff8c1a">${data.topicRaw}</b>`;
+    } else {
+      el.textContent = '非表示';
+    }
+    if (!topicInitialized && data.topicRaw) {
+      document.getElementById('topicInput').value = data.topicRaw;
+      topicInitialized = true;
+    }
+  }
+
+  // ---------- アンケート ----------
+  async function svStart() {
+    const options = ['svA', 'svB', 'svC', 'svD'].map(id => document.getElementById(id).value.trim());
+    const duration = Number(document.getElementById('svDur').value) || 60;
+    const msg = document.getElementById('svMsg');
+    if (!options[0] || !options[1]) {
+      msg.textContent = 'A と B は必須です';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      await fetch('/api/overlay/survey/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ options, duration }),
+      });
+      msg.textContent = 'アンケートを開始しました';
+      msg.className = 'msg ok';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function svStop() {
+    try {
+      await fetch('/api/overlay/survey/stop', { method: 'POST' });
+      document.getElementById('svMsg').textContent = '締め切りました';
+      document.getElementById('svMsg').className = 'msg ok';
+    } catch (e) {}
+  }
+
+  async function svClear() {
+    try {
+      await fetch('/api/overlay/survey/clear', { method: 'POST' });
+      document.getElementById('svMsg').textContent = '非表示にしました';
+      document.getElementById('svMsg').className = 'msg';
+    } catch (e) {}
+  }
+
+  let svLocal = null, svLocalAt = 0, svDockTicker = null;
+  function svRender(sv) {
+    const el = document.getElementById('svStatus');
+    const wrap = document.getElementById('svProgWrap');
+    if (!sv) {
+      el.textContent = 'アンケートなし';
+      wrap.style.display = 'none';
+      svLocal = null;
+      if (svDockTicker) { clearInterval(svDockTicker); svDockTicker = null; }
+      return;
+    }
+    svLocal = sv;
+    svLocalAt = Date.now();
+    if (!svDockTicker) svDockTicker = setInterval(svDockTick, 100);
+    svDockTick();
+  }
+
+  function svDockTick() {
+    const sv = svLocal;
+    if (!sv) return;
+    const el = document.getElementById('svStatus');
+    const wrap = document.getElementById('svProgWrap');
+    if (sv.active) {
+      const elapsed = (Date.now() - svLocalAt) / 1000;
+      const remain = Math.max(0, sv.remainSec - elapsed);
+      wrap.style.display = 'block';
+      document.getElementById('svProgTime').textContent = Math.ceil(remain) + '秒';
+      const dur = sv.durationSec || 60;
+      document.getElementById('svProgFill').style.width = Math.max(0, (remain / dur) * 100) + '%';
+      el.innerHTML = sv.results.map(r => `${r.key}: <b>${r.count}</b>票`).join(' / ') + ` / 合計 ${sv.total}`;
+    } else {
+      wrap.style.display = 'none';
+      el.innerHTML = '締切済み<br>' + sv.results.map(r => `${r.key}: <b>${r.count}</b>票 (${r.pct}%)`).join(' / ') + ` / 合計 ${sv.total}`;
+    }
+  }
+
+  // ---------- 背景の濃さ ----------
+  let opSaveTimer = null;
+  const opRange = document.getElementById('opRange');
+  const opValue = document.getElementById('opValue');
+  opRange.addEventListener('input', () => {
+    opValue.textContent = opRange.value;
+    clearTimeout(opSaveTimer);
+    opSaveTimer = setTimeout(async () => {
+      try {
+        await fetch('/api/overlay/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bgOpacity: Number(opRange.value) }),
+        });
+      } catch (e) {}
+    }, 300);
+  });
+
+  // ---------- スピード設定 ----------
+  let speedSaveTimer = null;
+  const speedRange = document.getElementById('speedRange');
+  const speedValue = document.getElementById('speedValue');
+
+  speedRange.addEventListener('input', () => {
+    speedValue.textContent = Number(speedRange.value).toFixed(1);
+    clearTimeout(speedSaveTimer);
+    speedSaveTimer = setTimeout(saveSpeed, 300);
+  });
+
+  async function saveSpeed() {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ speed: Number(speedRange.value) }),
+      });
+    } catch (e) {}
+  }
+
+  // ---------- コメントログ ----------
+  const logEl = document.getElementById('log');
+  const pauseCheck = document.getElementById('pauseCheck');
+  const pendingBadge = document.getElementById('pendingBadge');
+
+  let logAfterId = 0;
+  let pendingComments = []; // 一時停止中に溜まった新着
+  const MAX_LOG = 200;
+
+  function renderLogItem(c) {
+    const div = document.createElement('div');
+    div.className = 'log-item' + (c.isItem ? ' item' : '');
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = c.name + ':';
+    div.appendChild(name);
+    div.appendChild(document.createTextNode(' ' + (c.isItem ? `🎁 ${c.text}` : c.text)));
+    return div;
+  }
+
+  function appendComments(comments) {
+    for (const c of comments) {
+      logEl.appendChild(renderLogItem(c));
+    }
+    // 件数制限
+    while (logEl.children.length > MAX_LOG) {
+      logEl.removeChild(logEl.firstChild);
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function updatePendingBadge() {
+    if (pendingComments.length > 0) {
+      pendingBadge.style.display = 'inline-block';
+      pendingBadge.textContent = `新着 ${pendingComments.length}件`;
+    } else {
+      pendingBadge.style.display = 'none';
+    }
+  }
+
+  pauseCheck.addEventListener('change', () => {
+    if (!pauseCheck.checked && pendingComments.length > 0) {
+      appendComments(pendingComments);
+      pendingComments = [];
+      updatePendingBadge();
+    }
+  });
+
+  async function pollLog() {
+    try {
+      const res = await fetch(`/api/overlay/comments?afterId=${logAfterId}`);
+      const data = await res.json();
+      if (data.comments.length > 0) {
+        if (pauseCheck.checked) {
+          pendingComments.push(...data.comments);
+          updatePendingBadge();
+        } else {
+          appendComments(data.comments);
+        }
+      }
+      logAfterId = data.lastId;
+    } catch (e) {}
+    setTimeout(pollLog, 2000);
+  }
+
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
+  pollLog();
+
+  // ---------- アイテム履歴 ----------
+  async function loadGiftLog() {
+    try {
+      const res = await fetch('/api/overlay/giftlog');
+      const data = await res.json();
+      const el = document.getElementById('giftLog');
+      if (!data.gifts || data.gifts.length === 0) {
+        el.textContent = '履歴なし';
+        return;
+      }
+      el.innerHTML = data.gifts.map(g => {
+        const dt = new Date(g.ts).toLocaleString('ja-JP', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+        return `<div><span style="color:#888">${dt}</span> <span style="color:#ffd54f">🎁 ${g.item} ×${g.count}</span> <span style="color:#ccc">← ${g.name}</span></div>`;
+      }).join('');
+    } catch (e) {}
+  }
+
+  async function clearGiftLog() {
+    if (!confirm('アイテム履歴をクリアしますか？')) return;
+    await fetch('/api/overlay/giftlog/clear', { method: 'POST' });
+    loadGiftLog();
+  }
+
+  loadGiftLog();
+  setInterval(loadGiftLog, 10000);
+</script>
+</body>
+</html>
