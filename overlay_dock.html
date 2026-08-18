@@ -971,11 +971,15 @@
       if (!res.ok) return;
       const d = await res.json();
       const count = Number(d && d.followers_count);
-      if (Number.isFinite(count)) {
+      const chatroomId = d && d.chatroom && d.chatroom.id;
+      if (Number.isFinite(count) || chatroomId) {
         fetch('/api/overlay/kick-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ followerCount: count }),
+          body: JSON.stringify({
+            followerCount: Number.isFinite(count) ? count : undefined,
+            chatroomId: chatroomId || undefined,
+          }),
         }).catch(() => {});
       }
     } catch (e) {}

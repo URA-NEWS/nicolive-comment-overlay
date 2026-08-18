@@ -1067,6 +1067,13 @@ check();
     if (Number.isFinite(Number(body.followerCount))) {
       kickFollowerCount = Number(body.followerCount);
     }
+    // chatroomIdが未設定 or 未接続なら、ブラウザ側から取得したIDで接続を試みる
+    // (再デプロイでconfigがリセットされた場合の自動復旧)
+    if (body.chatroomId && !kickWs && String(body.chatroomId) !== String(config.kickChatroomId)) {
+      config.kickChatroomId = String(body.chatroomId);
+      saveConfig(config);
+      connectKickChat(config.kickSlug);
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     return;
