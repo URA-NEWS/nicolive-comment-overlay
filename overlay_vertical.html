@@ -682,7 +682,16 @@
   <div id="quizFootWrap"><div id="quizFoot"></div></div>
 </div>
 <script>
-  const API_URL = "/api/overlay/comments";
+  // ?platform=tiktok を付けると、メインのふわっち/Kickとは独立してTikTokのコメントだけを表示できる
+  // (TikTokキャプチャ用ウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
+  const urlParams = new URLSearchParams(location.search);
+  const platformOverride = urlParams.get('platform');
+  if (urlParams.get('window') === '1') {
+    document.documentElement.style.background = '#000';
+    document.addEventListener('DOMContentLoaded', () => { document.body.style.background = '#000'; });
+  }
+  const API_URL = "/api/overlay/comments" + (platformOverride ? `?platform=${encodeURIComponent(platformOverride)}` : '');
+  const API_URL_SEP = platformOverride ? '&' : '?';
   const STATUS_URL = "/api/overlay/status";
   const POLL_MS = 1000;
   const STATUS_POLL_MS = 5000;
@@ -1083,8 +1092,8 @@
   async function poll() {
     try {
       const url = lastId === null
-        ? `${API_URL}?afterId=0`
-        : `${API_URL}?afterId=${lastId}`;
+        ? `${API_URL}${API_URL_SEP}afterId=0`
+        : `${API_URL}${API_URL_SEP}afterId=${lastId}`;
       const res = await fetch(url);
       const data = await res.json();
       if (lastId === null) {

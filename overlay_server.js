@@ -67,12 +67,13 @@ function loadConfig() {
     if (typeof c.goalVisible !== 'boolean') c.goalVisible = false;
     if (typeof c.goalBaseline !== 'number') c.goalBaseline = 0;
     if (typeof c.geminiApiKey !== 'string') c.geminiApiKey = '';
-    if (c.commentSource !== 'fw' && c.commentSource !== 'kick') c.commentSource = 'fw';
+    if (!['fw', 'kick', 'tiktok'].includes(c.commentSource)) c.commentSource = 'fw';
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
+    if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
     return c;
   } catch {
-    return { liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true };
+    return { liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '' };
   }
 }
 function saveConfig(cfg) {
@@ -783,6 +784,106 @@ if (config.kickSlug) {
   setTimeout(() => connectKickChat(config.kickSlug), 2000);
 }
 
+// ============================================================
+// TikTok LIVE対応 (tiktok-live-connector, 非公式)
+// ============================================================
+// このパッケージはESM専用のため、CommonJSからは動的import()で読み込む。
+let TikTokLiveConnection = null;
+let tiktokLibLoadPromise = null;
+function loadTikTokLib() {
+  if (TikTokLiveConnection) return Promise.resolve();
+  if (!tiktokLibLoadPromise) {
+    tiktokLibLoadPromise = import('tiktok-live-connector').then((mod) => {
+      TikTokLiveConnection = mod.TikTokLiveConnection;
+    });
+  }
+  return tiktokLibLoadPromise;
+}
+
+let tiktokConn = null;
+let tiktokReconnectTimer = null;
+let tiktokViewerCount = null;
+let tiktokConnected = false;
+
+async function connectTikTok(username) {
+  if (!username) return;
+  try {
+    await loadTikTokLib();
+  } catch (e) {
+    console.error('[TikTok] ライブラリ読み込み失敗:', e.message);
+    return;
+  }
+
+  disconnectTikTok();
+
+  const uniqueId = String(username).trim().replace(/^@/, '');
+  console.log(`[TikTok] 接続試行: @${uniqueId}`);
+
+  const opts = {};
+  if (process.env.TIKTOK_SIGN_API_KEY) opts.signApiKey = process.env.TIKTOK_SIGN_API_KEY;
+  const conn = new TikTokLiveConnection(uniqueId, opts);
+  tiktokConn = conn;
+
+  conn.on('chat', (data) => {
+    addComment({
+      name: data.user?.nickname || data.user?.uniqueId || '?',
+      text: data.comment || '',
+      isItem: false,
+      platform: 'tiktok',
+    });
+  });
+
+  conn.on('gift', (data) => {
+    const giftType = data.giftDetails?.giftType;
+    if (giftType === 1 && !data.repeatEnd) return; // 連打中は完了時のみ計上
+    const giftName = data.giftDetails?.giftName || 'ギフト';
+    addComment({
+      name: data.user?.nickname || data.user?.uniqueId || '?',
+      text: `${giftName} ×${data.repeatCount || 1}`,
+      isItem: true,
+      itemLabel: giftName,
+      itemCount: data.repeatCount || 1,
+      platform: 'tiktok',
+    });
+  });
+
+  conn.on('roomUser', (data) => {
+    if (Number.isFinite(Number(data.viewerCount))) tiktokViewerCount = Number(data.viewerCount);
+  });
+
+  conn.on('disconnected', () => {
+    tiktokConnected = false;
+    console.log('[TikTok] 切断。30秒後に再接続');
+    clearTimeout(tiktokReconnectTimer);
+    tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
+  });
+
+  conn.on('error', (e) => {
+    console.error('[TikTok] error:', e && (e.info || e.exception?.message || e.message));
+  });
+
+  try {
+    const state = await conn.connect();
+    tiktokConnected = true;
+    console.log(`[TikTok] 接続完了 roomId=${state.roomId}`);
+  } catch (e) {
+    tiktokConnected = false;
+    console.error('[TikTok] 接続失敗:', e.message);
+    clearTimeout(tiktokReconnectTimer);
+    tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
+  }
+}
+
+function disconnectTikTok() {
+  clearTimeout(tiktokReconnectTimer);
+  if (tiktokConn) { try { tiktokConn.disconnect(); } catch {} tiktokConn = null; }
+  tiktokConnected = false;
+  tiktokViewerCount = null;
+}
+
+if (config.tiktokUsername) {
+  setTimeout(() => connectTikTok(config.tiktokUsername), 2000);
+}
 
 // ============================================================
 // AIトークテーマ生成 (Gemini)
@@ -871,15 +972,18 @@ const server = http.createServer(async (req, res) => {
 
   // ---- 切り替え式オーバーレイ(ドックの設定でニコ生風/縦型が切り替わる) ----
   if (url.pathname === '/overlay-auto' && req.method === 'GET') {
+    const isWindowMode = url.searchParams.get('window') === '1';
+    const bg = isWindowMode ? '#000' : 'transparent';
     const html = `<!DOCTYPE html>
 <html lang="ja">
 <head><meta charset="UTF-8"><title>コメントオーバーレイ</title>
-<style>html,body{margin:0;padding:0;width:100vw;height:100vh;background:transparent;overflow:hidden}iframe{width:100vw;height:100vh;border:0;background:transparent}</style>
+<style>html,body{margin:0;padding:0;width:100vw;height:100vh;background:${bg};overflow:hidden}iframe{width:100vw;height:100vh;border:0;background:${bg}}</style>
 </head>
 <body>
 <iframe id="f" allowtransparency="true"></iframe>
 <script>
 let mode = null;
+const qs = location.search; // ?platform=...&window=1 等をそのままiframeへ引き継ぐ
 async function check() {
   try {
     const res = await fetch('/api/overlay/status');
@@ -887,7 +991,7 @@ async function check() {
     const m = d.displayMode === 'vertical' ? 'vertical' : 'nico';
     if (m !== mode) {
       mode = m;
-      document.getElementById('f').src = m === 'vertical' ? '/overlay-vertical' : '/overlay-nico';
+      document.getElementById('f').src = (m === 'vertical' ? '/overlay-vertical' : '/overlay-nico') + qs;
     }
   } catch (e) {}
   setTimeout(check, 3000);
@@ -920,6 +1024,9 @@ check();
       commentSource: config.commentSource,
       showFw: config.showFw,
       showKick: config.showKick,
+      tiktokUsername: config.tiktokUsername,
+      tiktokConnected,
+      tiktokViewerCount,
       goal: (config.goalVisible && config.goalTarget > 0) ? {
         target: config.goalTarget,
         rate: config.goalRate,
@@ -1053,9 +1160,24 @@ check();
       }
     }
 
+    if (body.tiktokUsername !== undefined) {
+      const uname = String(body.tiktokUsername).trim()
+        .replace(/^https?:\/\/(www\.)?tiktok\.com\//i, '')
+        .replace(/\/live\/?$/i, '')
+        .replace(/^@/, '');
+      const changingUname = uname !== config.tiktokUsername;
+      config.tiktokUsername = uname;
+      changed = true;
+      if (uname) {
+        if (changingUname) connectTikTok(uname);
+      } else {
+        disconnectTikTok();
+      }
+    }
+
     if (changed) saveConfig(config);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug }));
+    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug, tiktokUsername: config.tiktokUsername }));
     return;
   }
 
@@ -1081,8 +1203,14 @@ check();
 
   if (url.pathname === '/api/overlay/comments' && req.method === 'GET') {
     const afterId = Number(url.searchParams.get('afterId') || '0');
+    // ?platform= が指定されていればそちらを優先(TikTok用キャプチャウィンドウなど、
+    // メインのOBSオーバーレイとは別のプラットフォームを同時に表示するため)
+    const platformOverride = url.searchParams.get('platform');
+    const activeSource = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok')
+      ? platformOverride
+      : config.commentSource;
     const newComments = recentComments.filter(
-      (c) => c.id > afterId && (!c.platform || c.platform === config.commentSource)
+      (c) => c.id > afterId && (!c.platform || c.platform === activeSource)
     );
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ comments: newComments, lastId: commentIdCounter }));

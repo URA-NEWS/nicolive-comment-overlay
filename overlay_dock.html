@@ -169,8 +169,18 @@
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="radio" name="commentSource" value="kick"> Kick
   </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="radio" name="commentSource" value="tiktok"> TikTok
+  </label>
 </div>
 <div class="hint">フォロワー数・閲覧数のヘッダーは両方同時に表示されます</div>
+
+<label for="tiktokUsername" style="margin-top:12px">TikTokユーザー名（@なし、例: tiktok）</label>
+<input type="text" id="tiktokUsername" placeholder="tiktok または https://www.tiktok.com/@tiktok/live">
+<button onclick="setTiktokUsername()">設定</button>
+<div id="tiktokStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">TikTokはOBSを使わないため、キャプチャ用の別ウィンドウを開いてください（黒背景・ウィンドウキャプチャ用）</div>
+<button onclick="openTiktokWindow()" style="margin-top:6px">TikTokキャプチャ用ウィンドウを開く</button>
 
 <h2 class="acc">クイズ（ミリオネア風）</h2>
 <div class="accBody"><label>問題文</label>
@@ -396,6 +406,22 @@
         kickStatusEl.style.color = '#888';
       }
 
+      // TikTok状態
+      const tiktokStatusEl = document.getElementById('tiktokStatus');
+      if (data.tiktokUsername) {
+        tiktokStatusEl.textContent = data.tiktokConnected
+          ? `TikTok接続中: @${data.tiktokUsername}（視聴数: ${data.tiktokViewerCount ?? '-'}）`
+          : `TikTok接続待ち: @${data.tiktokUsername}`;
+        tiktokStatusEl.style.color = data.tiktokConnected ? '#6cce6c' : '#aaa';
+      } else {
+        tiktokStatusEl.textContent = 'TikTok未設定';
+        tiktokStatusEl.style.color = '#888';
+      }
+      if (!tiktokUsernameInitialized && data.tiktokUsername !== undefined) {
+        document.getElementById('tiktokUsername').value = data.tiktokUsername;
+        tiktokUsernameInitialized = true;
+      }
+
       if (!speedInitialized) {
         document.getElementById('speedRange').value = data.speed;
         document.getElementById('speedValue').textContent = Number(data.speed).toFixed(1);
@@ -486,6 +512,27 @@
   });
   let commentSourceInitialized = false;
   let headerVisInitialized = false;
+  let tiktokUsernameInitialized = false;
+
+  async function setTiktokUsername() {
+    const input = document.getElementById('tiktokUsername').value.trim();
+    const res = await fetch('/api/overlay/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tiktokUsername: input }),
+    });
+    const data = await res.json();
+    const msg = document.getElementById('tiktokStatus');
+    msg.textContent = data.tiktokUsername
+      ? `TikTok設定: @${data.tiktokUsername}（接続中...）`
+      : 'TikTok未設定';
+    msg.style.color = '#aaa';
+  }
+
+  function openTiktokWindow() {
+    const url = `${location.origin}/overlay-auto?platform=tiktok&window=1`;
+    window.open(url, 'tiktokCaptureWindow', 'width=500,height=700,resizable=yes');
+  }
 
   document.getElementById('showFw').addEventListener('change', async (e) => {
     try {
