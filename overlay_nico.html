@@ -647,6 +647,117 @@
   }
   #quizFoot:empty { display: none; }
   #quizFootWrap { text-align: center; }
+
+  /* ===== ルーレット ===== */
+  #rouletteBox {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    width: 480px;
+    height: 480px;
+    display: none;
+    opacity: 0;
+    z-index: 30;
+    font-family: "Noto Sans JP", "Yu Gothic UI", sans-serif;
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 1, 0.3, 1);
+  }
+  #rouletteBox.on { display: block; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #rlWheelWrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 0 10px #2a1a4a, 0 0 0 14px #ffd54f, 0 14px 50px rgba(0,0,0,0.65);
+  }
+  #rlCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    will-change: transform;
+  }
+  #rlHub {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 54px;
+    height: 54px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #fff6d8, #ffd54f 55%, #b8860b 100%);
+    border: 3px solid #fff;
+    box-shadow: 0 0 20px rgba(255,213,79,0.85), 0 2px 8px rgba(0,0,0,0.5);
+    z-index: 3;
+  }
+  #rlPointer {
+    position: absolute;
+    left: 50%;
+    top: -14px;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 20px solid transparent;
+    border-right: 20px solid transparent;
+    border-top: 34px solid #ff3b3b;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
+    z-index: 4;
+  }
+  #rlPointer::after {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: -34px;
+    width: 40px;
+    height: 34px;
+    border-radius: 50% 50% 0 0;
+    background: transparent;
+  }
+  #rlWinnerLabel {
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    margin-top: 18px;
+    transform: translateX(-50%) scale(0.7);
+    white-space: nowrap;
+    padding: 12px 34px;
+    background: linear-gradient(180deg, #ffe57f 0%, #ffb300 100%);
+    border: 2px solid #fff;
+    border-radius: 999px;
+    color: #3a2400;
+    font-size: 26px;
+    font-weight: 900;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+    box-shadow: 0 0 30px rgba(255,190,0,0.85), 0 6px 18px rgba(0,0,0,0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 5;
+  }
+  #rlWinnerLabel.show { opacity: 1; transform: translateX(-50%) scale(1); }
+  #rlWinnerLabel.show { animation: rlWinPulse 1s ease-in-out 0.35s infinite; }
+  @keyframes rlWinPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.25); }
+  }
+  #rlSpinningTag {
+    position: absolute;
+    left: 50%;
+    bottom: -46px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 17px;
+    font-weight: 800;
+    color: #ffd54f;
+    letter-spacing: 3px;
+    text-shadow: 0 0 14px rgba(255,213,79,0.7);
+    opacity: 0;
+  }
+  #rouletteBox.spinning #rlSpinningTag { opacity: 1; animation: rlBlink 0.9s ease-in-out infinite; }
+  @keyframes rlBlink {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
 </style>
 </head>
 <body>
@@ -696,6 +807,15 @@
   <div id="quizQwrap" style="position:relative"><div id="quizQ"></div><div id="quizCount"><div id="quizCountNum"></div><div id="quizCountLabel">AUDIENCE</div></div></div>
   <div id="quizOpts"></div>
   <div id="quizFootWrap"><div id="quizFoot"></div></div>
+</div>
+<div id="rouletteBox">
+  <div id="rlWheelWrap">
+    <canvas id="rlCanvas" width="480" height="480"></canvas>
+    <div id="rlHub"></div>
+    <div id="rlPointer"></div>
+    <div id="rlWinnerLabel"></div>
+    <div id="rlSpinningTag">SPINNING...</div>
+  </div>
 </div>
 <script>
   // ===== 設定 =====
@@ -920,6 +1040,236 @@
     updateTopic(data.topic);
     updateGoal(data.goal);
     updateQuiz(data.quiz);
+    updateRoulette(data.roulette);
+  }
+
+  // ===== ルーレット =====
+  let rlWheelRotation = 0;   // 累積回転角(度)。連続スピンでも滑らかにつながるよう保持
+  let rlLastSpinId = -1;     // 直近に処理したspinId
+  let rlItems = [];          // 現在表示中の項目キャッシュ(再描画判定用)
+  let rlAnimHandle = null;   // requestAnimationFrameのID
+  let rlAudioCtx = null;
+
+  function rlGetAudioCtx() {
+    if (!rlAudioCtx) {
+      try { rlAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+    }
+    if (rlAudioCtx.state === 'suspended') { rlAudioCtx.resume().catch(() => {}); }
+    return rlAudioCtx;
+  }
+
+  // ルーレットの「カチッ」という弾き音(バンドパスノイズバースト)
+  function rlPlayTick(strength) {
+    const ctx = rlGetAudioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const dur = 0.045;
+    const bufSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2600 + Math.random() * 500;
+    bp.Q.value = 3.2;
+    const gain = ctx.createGain();
+    const vol = Math.min(0.55, 0.18 + strength * 0.45);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    src.connect(bp).connect(gain).connect(ctx.destination);
+    src.start(now);
+    src.stop(now + dur + 0.01);
+  }
+
+  // 当選時のチャイム音
+  function rlPlayWinChime() {
+    const ctx = rlGetAudioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((freq, i) => {
+      const t0 = now + i * 0.09;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.32, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.55);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.6);
+    });
+  }
+
+  const RL_COLORS = ['#ff5c5c', '#ffb347', '#ffe066', '#8ce99a', '#66d9e8', '#74a9ff', '#b18cff', '#ff8cd9'];
+
+  function rlDrawWheel(items) {
+    const canvas = document.getElementById('rlCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2, r = w / 2 - 4;
+    ctx.clearRect(0, 0, w, h);
+    const n = items.length;
+    if (n === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    const wedge = (Math.PI * 2) / n;
+    const fontSize = n <= 8 ? 22 : n <= 14 ? 17 : n <= 22 ? 13 : 10;
+    for (let i = 0; i < n; i++) {
+      const start = -Math.PI / 2 + i * wedge;
+      const end = start + wedge;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, start, end, false);
+      ctx.closePath();
+      ctx.fillStyle = RL_COLORS[i % RL_COLORS.length];
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      const midAngle = start + wedge / 2;
+      const flip = Math.cos(midAngle) < 0; // 左半分は文字が逆さまになるので180度反転
+      ctx.rotate(flip ? midAngle + Math.PI : midAngle);
+      ctx.textAlign = flip ? 'left' : 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#1a1024';
+      ctx.font = `900 ${fontSize}px "Noto Sans JP", "Yu Gothic UI", sans-serif`;
+      let label = items[i];
+      const maxChars = n <= 10 ? 12 : n <= 20 ? 8 : 6;
+      if (label.length > maxChars) label = label.slice(0, maxChars - 1) + '…';
+      ctx.fillText(label, flip ? -(r - 14) : (r - 14), 0);
+      ctx.restore();
+    }
+  }
+
+  function rlCancelAnim() {
+    if (rlAnimHandle) { cancelAnimationFrame(rlAnimHandle); rlAnimHandle = null; }
+  }
+
+  function rlSetRotation(deg) {
+    const canvas = document.getElementById('rlCanvas');
+    if (canvas) canvas.style.transform = `rotate(${deg}deg)`;
+  }
+
+  // 実際に回転アニメーションを実行(等減速: 物理的に自然な減速カーブ)
+  function rlRunSpinAnimation(items, resultIndex, durationMs, elapsedMs) {
+    rlCancelAnim();
+    const n = items.length;
+    if (n === 0) return;
+    const wedgeDeg = 360 / n;
+    const centerDeg = (resultIndex + 0.5) * wedgeDeg;
+    let requiredMod = (360 - (centerDeg % 360)) % 360;
+    const jitter = (Math.random() - 0.5) * wedgeDeg * 0.5;
+    requiredMod = (requiredMod + jitter + 360) % 360;
+
+    const startRotation = rlWheelRotation;
+    const currentMod = ((startRotation % 360) + 360) % 360;
+    let deltaToTarget = (requiredMod - currentMod + 360) % 360;
+    const extraTurns = 6 + Math.floor(Math.random() * 3);
+    const totalDelta = deltaToTarget + extraTurns * 360;
+    const endRotation = startRotation + totalDelta;
+
+    const startTime = performance.now() - elapsedMs;
+    let lastTickCount = Math.floor((rlWheelRotation - startRotation) / wedgeDeg);
+    document.getElementById('rouletteBox').classList.add('spinning');
+    document.getElementById('rlWinnerLabel').classList.remove('show');
+
+    function frame(now) {
+      const t = Math.min(1, (now - startTime) / durationMs);
+      // 等減速カーブ (物理的な摩擦ブレーキに近い): f(t) = 1-(1-t)^2
+      const eased = 1 - Math.pow(1 - t, 2);
+      const rotation = startRotation + totalDelta * eased;
+      rlWheelRotation = rotation;
+      rlSetRotation(rotation);
+
+      const traveled = rotation - startRotation;
+      const tickCount = Math.floor(traveled / wedgeDeg);
+      if (tickCount > lastTickCount) {
+        const speedFactor = 1 - t; // 序盤は強め、終盤は弱め
+        rlPlayTick(Math.max(0.05, speedFactor));
+        lastTickCount = tickCount;
+      }
+
+      if (t < 1) {
+        rlAnimHandle = requestAnimationFrame(frame);
+      } else {
+        rlWheelRotation = endRotation;
+        rlSetRotation(endRotation);
+        rlAnimHandle = null;
+        document.getElementById('rouletteBox').classList.remove('spinning');
+        const label = document.getElementById('rlWinnerLabel');
+        label.textContent = '🎉 ' + items[resultIndex];
+        label.classList.add('show');
+        rlPlayWinChime();
+      }
+    }
+    rlAnimHandle = requestAnimationFrame(frame);
+  }
+
+  // 回転を挟まず、当選項目のウェッジへ即座にスナップ(既にスピン終了後に読み込んだクライアント用)
+  function rlSnapToResult(items, resultIndex) {
+    rlCancelAnim();
+    const n = items.length;
+    if (n === 0) return;
+    const wedgeDeg = 360 / n;
+    const centerDeg = (resultIndex + 0.5) * wedgeDeg;
+    const requiredMod = (360 - (centerDeg % 360)) % 360;
+    rlWheelRotation = requiredMod;
+    rlSetRotation(rlWheelRotation);
+    document.getElementById('rouletteBox').classList.remove('spinning');
+    const label = document.getElementById('rlWinnerLabel');
+    label.textContent = '🎉 ' + items[resultIndex];
+    label.classList.add('show');
+  }
+
+  function updateRoulette(rl) {
+    const box = document.getElementById('rouletteBox');
+    if (!box || !rl) return;
+    box.classList.toggle('on', !!rl.visible);
+
+    const sig = rl.items.join('|');
+    if (sig !== rlItems.join('|')) {
+      rlItems = rl.items.slice();
+      rlDrawWheel(rlItems);
+      if (!rl.spinning && !rlAnimHandle) rlSetRotation(rlWheelRotation);
+    }
+
+    const hasResult = rl.items.length > 0 && rl.resultIndex !== null && rl.resultIndex < rl.items.length;
+
+    if (rl.spinId !== rlLastSpinId) {
+      rlLastSpinId = rl.spinId;
+      if (hasResult) {
+        const elapsed = rl.spinStartedAt ? Math.max(0, Date.now() - rl.spinStartedAt) : rl.spinDurationMs;
+        if (rl.spinning && elapsed < rl.spinDurationMs) {
+          // 現在進行中のスピンを検知: 経過時間ぶんを差し引いてアニメを同期開始
+          rlRunSpinAnimation(rl.items, rl.resultIndex, rl.spinDurationMs, elapsed);
+        } else {
+          // 既に終わっているスピン(遅れて表示を開いた場合など): 結果だけ即座に反映
+          rlSnapToResult(rl.items, rl.resultIndex);
+        }
+      } else {
+        rlCancelAnim();
+        document.getElementById('rlWinnerLabel').classList.remove('show');
+      }
+    } else if (!rl.spinning && !rlAnimHandle && hasResult) {
+      // 回転中でない場合は当選ラベルを維持表示
+      const label = document.getElementById('rlWinnerLabel');
+      if (label && !label.classList.contains('show')) {
+        label.textContent = '🎉 ' + rl.items[rl.resultIndex];
+        label.classList.add('show');
+      }
+    }
   }
 
   // ===== クイズ =====
