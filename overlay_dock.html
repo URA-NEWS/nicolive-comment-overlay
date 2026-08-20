@@ -283,6 +283,25 @@
 <div class="hint">視聴者がコメントで「A」「B」「C」「D」と投稿すると集計されます（1人1票・入力した選択肢のみ有効）</div>
 </div>
 
+<h2 class="acc">ルーレット</h2>
+<div class="accBody">
+<label>項目を追加（<span id="rlCount">0</span>/<span id="rlMax">30</span>）</label>
+<div class="speed-row" style="gap:8px">
+  <input type="text" id="rlInput" placeholder="項目名を入力してEnterまたは追加" style="flex:1" maxlength="30">
+  <button class="small" onclick="rlAdd()">追加</button>
+</div>
+<div id="rlList" style="margin-top:8px;max-height:220px;overflow-y:auto;border:1px solid #333;border-radius:4px;padding:4px;"></div>
+<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+  <button onclick="rlSpin()">ルーレットを回す</button>
+  <button class="small" onclick="rlReset()">全項目リセット</button>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="rlVisible"> 表示
+  </label>
+</div>
+<div class="msg" id="rlMsg"></div>
+<div class="hint">項目は最大30個。回すと重ならないよう自動で再抽選し、1つの当選項目を選びます</div>
+</div>
+
 <h2 class="acc">設定</h2>
 <div class="accBody">
 <div class="subhead">流れるスピード</div>
@@ -393,6 +412,7 @@
       goalRender(data);
       topicRender(data);
       svRender(data.survey);
+      rlRender(data.roulette);
 
       // Kick状態
       const kickStatusEl = document.getElementById('kickStatus');
@@ -860,6 +880,99 @@
       document.getElementById('svMsg').textContent = '非表示にしました';
       document.getElementById('svMsg').className = 'msg';
     } catch (e) {}
+  }
+
+  // ---------- ルーレット ----------
+  let rlVisibleInitialized = false;
+  let rlItemsLocal = [];
+
+  function rlMsg(text, ok) {
+    const el = document.getElementById('rlMsg');
+    el.textContent = text;
+    el.className = ok ? 'msg ok' : 'msg err';
+  }
+
+  async function rlAdd() {
+    const input = document.getElementById('rlInput');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      const res = await fetch('/api/overlay/roulette/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) { rlMsg(data.error || '追加できませんでした', false); return; }
+      input.value = '';
+      input.focus();
+      rlRender(data.roulette);
+    } catch (e) { rlMsg('通信エラー', false); }
+  }
+
+  async function rlRemove(index) {
+    try {
+      const res = await fetch('/api/overlay/roulette/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index }),
+      });
+      const data = await res.json();
+      rlRender(data.roulette);
+    } catch (e) {}
+  }
+
+  async function rlReset() {
+    try {
+      const res = await fetch('/api/overlay/roulette/reset', { method: 'POST' });
+      const data = await res.json();
+      rlRender(data.roulette);
+      rlMsg('リセットしました', true);
+    } catch (e) {}
+  }
+
+  async function rlSpin() {
+    try {
+      const res = await fetch('/api/overlay/roulette/spin', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { rlMsg(data.error || '回せませんでした', false); return; }
+      rlMsg('回転中...', true);
+    } catch (e) { rlMsg('通信エラー', false); }
+  }
+
+  document.getElementById('rlInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') rlAdd();
+  });
+
+  document.getElementById('rlVisible').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/roulette/visible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visible: e.target.checked }),
+      });
+    } catch (e) {}
+  });
+
+  function rlRender(rl) {
+    if (!rl) return;
+    rlItemsLocal = rl.items || [];
+    document.getElementById('rlCount').textContent = rlItemsLocal.length;
+    document.getElementById('rlMax').textContent = rl.maxItems || 30;
+    if (!rlVisibleInitialized) {
+      document.getElementById('rlVisible').checked = !!rl.visible;
+      rlVisibleInitialized = true;
+    }
+    const list = document.getElementById('rlList');
+    if (!rlItemsLocal.length) {
+      list.innerHTML = '<div style="color:#666;font-size:12px;padding:6px">項目がありません</div>';
+    } else {
+      list.innerHTML = rlItemsLocal.map((t, i) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;font-size:13px;border-bottom:1px solid #262626">
+          <span>${i + 1}. ${t.replace(/</g, '&lt;')}</span>
+          <button class="small" style="padding:2px 8px" onclick="rlRemove(${i})">×</button>
+        </div>`).join('');
+    }
   }
 
   let svLocal = null, svLocalAt = 0, svDockTicker = null;
