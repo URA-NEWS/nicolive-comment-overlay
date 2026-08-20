@@ -636,8 +636,8 @@
   #rouletteBox {
     position: fixed;
     top: 50%;
-    width: 380px;
-    height: 380px;
+    width: 440px;
+    height: 440px;
     transform: translateY(-50%) scale(0.9);
     transform-origin: center center;
     display: none;
@@ -668,8 +668,8 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 44px;
-    height: 44px;
+    width: 50px;
+    height: 50px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     background: radial-gradient(circle at 38% 32%, #fff6d8, #ffd54f 55%, #b8860b 100%);
@@ -680,13 +680,13 @@
   #rlPointer {
     position: absolute;
     left: 50%;
-    top: -12px;
+    top: -14px;
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border-left: 16px solid transparent;
-    border-right: 16px solid transparent;
-    border-top: 28px solid #ff3b3b;
+    border-left: 18px solid transparent;
+    border-right: 18px solid transparent;
+    border-top: 32px solid #ff3b3b;
     filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
     z-index: 4;
   }
@@ -697,12 +697,12 @@
     margin-top: 16px;
     transform: translateX(-50%) scale(0.7);
     white-space: nowrap;
-    padding: 10px 26px;
+    padding: 12px 32px;
     background: linear-gradient(180deg, #ffe57f 0%, #ffb300 100%);
     border: 2px solid #fff;
     border-radius: 999px;
     color: #3a2400;
-    font-size: 21px;
+    font-size: 26px;
     font-weight: 900;
     text-shadow: 0 1px 2px rgba(255,255,255,0.5);
     box-shadow: 0 0 26px rgba(255,190,0,0.85), 0 6px 16px rgba(0,0,0,0.5);
@@ -787,7 +787,7 @@
 </div>
 <div id="rouletteBox" class="pos-right">
   <div id="rlWheelWrap">
-    <canvas id="rlCanvas" width="380" height="380"></canvas>
+    <canvas id="rlCanvas" width="440" height="440"></canvas>
     <div id="rlHub"></div>
     <div id="rlPointer"></div>
     <div id="rlWinnerLabel"></div>
@@ -1003,7 +1003,7 @@
       return;
     }
     const wedge = (Math.PI * 2) / n;
-    const fontSize = n <= 8 ? 18 : n <= 14 ? 14 : n <= 22 ? 11 : 9;
+    const fontSize = n <= 8 ? 21 : n <= 14 ? 16 : n <= 22 ? 13 : 10;
     for (let i = 0; i < n; i++) {
       const start = -Math.PI / 2 + i * wedge;
       const end = start + wedge;
