@@ -635,7 +635,7 @@
   /* ===== ルーレット ===== */
   #rouletteBox {
     position: fixed;
-    top: 50%;
+    top: calc(50% - 80px);
     width: 440px;
     height: 440px;
     transform: translateY(-50%) scale(0.9);
@@ -1003,7 +1003,9 @@
       return;
     }
     const wedge = (Math.PI * 2) / n;
-    const fontSize = n <= 8 ? 21 : n <= 14 ? 16 : n <= 22 ? 13 : 10;
+    // 項目数に応じた基準サイズ(=長文の項目のデフォルトサイズ)。文字数が少ない項目はこれより大きく表示する
+    const baseFontSize = n <= 8 ? 21 : n <= 14 ? 16 : n <= 22 ? 13 : 10;
+    const maxChars = n <= 10 ? 12 : n <= 20 ? 8 : 6;
     for (let i = 0; i < n; i++) {
       const start = -Math.PI / 2 + i * wedge;
       const end = start + wedge;
@@ -1025,10 +1027,17 @@
       ctx.textAlign = flip ? 'left' : 'right';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#1a1024';
-      ctx.font = `900 ${fontSize}px "Noto Sans JP", "Yu Gothic UI", sans-serif`;
       let label = items[i];
-      const maxChars = n <= 10 ? 12 : n <= 20 ? 8 : 6;
       if (label.length > maxChars) label = label.slice(0, maxChars - 1) + '…';
+      // 文字が少ないほど大きく、maxChars相当の長文は今まで通りの基準サイズに
+      const len = label.replace('…', '').length || 1;
+      const shortLen = 2;
+      let scale = 1;
+      if (len <= shortLen) scale = 1.35;
+      else if (len >= maxChars) scale = 1;
+      else scale = 1.35 - ((len - shortLen) / (maxChars - shortLen)) * 0.35;
+      const fontSize = Math.round(baseFontSize * scale);
+      ctx.font = `900 ${fontSize}px "Noto Sans JP", "Yu Gothic UI", sans-serif`;
       ctx.fillText(label, flip ? -(r - 12) : (r - 12), 0);
       ctx.restore();
     }
@@ -1057,7 +1066,7 @@
     const startRotation = rlWheelRotation;
     const currentMod = ((startRotation % 360) + 360) % 360;
     let deltaToTarget = (requiredMod - currentMod + 360) % 360;
-    const extraTurns = 6 + Math.floor(Math.random() * 3);
+    const extraTurns = 9 + Math.floor(Math.random() * 3); // 回転数を増やして勢いよく
     const totalDelta = deltaToTarget + extraTurns * 360;
     const endRotation = startRotation + totalDelta;
 
@@ -1068,8 +1077,8 @@
 
     function frame(now) {
       const t = Math.min(1, (now - startTime) / durationMs);
-      // 等減速カーブ (物理的な摩擦ブレーキに近い): f(t) = 1-(1-t)^2
-      const eased = 1 - Math.pow(1 - t, 2);
+      // 減速カーブ: 序盤の勢いを強く、終盤でしっかり止まる f(t) = 1-(1-t)^3
+      const eased = 1 - Math.pow(1 - t, 3);
       const rotation = startRotation + totalDelta * eased;
       rlWheelRotation = rotation;
       rlSetRotation(rotation);
