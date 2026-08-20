@@ -294,9 +294,7 @@
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
   <button onclick="rlSpin()">ルーレットを回す</button>
   <button class="small" onclick="rlReset()">全項目リセット</button>
-  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="checkbox" id="rlVisible"> 表示
-  </label>
+  <button class="small" id="rlVisibleBtn" onclick="rlToggleVisible()">表示中（クリックで非表示）</button>
 </div>
 <div class="msg" id="rlMsg"></div>
 <div class="hint">項目は最大30個。回すと重ならないよう自動で再抽選し、1つの当選項目を選びます</div>
@@ -883,8 +881,28 @@
   }
 
   // ---------- ルーレット ----------
-  let rlVisibleInitialized = false;
+  let rlVisibleState = false;
   let rlItemsLocal = [];
+
+  function rlSetVisibleBtn(visible) {
+    const btn = document.getElementById('rlVisibleBtn');
+    if (!btn) return;
+    rlVisibleState = !!visible;
+    btn.textContent = rlVisibleState ? '表示中（クリックで非表示）' : '非表示中（クリックで表示）';
+    btn.style.background = rlVisibleState ? '#2e7d32' : '#555';
+  }
+
+  async function rlToggleVisible() {
+    const next = !rlVisibleState;
+    rlSetVisibleBtn(next); // 即座に見た目を切り替え(体感速度優先)
+    try {
+      await fetch('/api/overlay/roulette/visible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visible: next }),
+      });
+    } catch (e) {}
+  }
 
   function rlMsg(text, ok) {
     const el = document.getElementById('rlMsg');
@@ -944,25 +962,12 @@
     if (e.key === 'Enter') rlAdd();
   });
 
-  document.getElementById('rlVisible').addEventListener('change', async (e) => {
-    try {
-      await fetch('/api/overlay/roulette/visible', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visible: e.target.checked }),
-      });
-    } catch (e) {}
-  });
-
   function rlRender(rl) {
     if (!rl) return;
     rlItemsLocal = rl.items || [];
     document.getElementById('rlCount').textContent = rlItemsLocal.length;
     document.getElementById('rlMax').textContent = rl.maxItems || 30;
-    if (!rlVisibleInitialized) {
-      document.getElementById('rlVisible').checked = !!rl.visible;
-      rlVisibleInitialized = true;
-    }
+    rlSetVisibleBtn(rl.visible);
     const list = document.getElementById('rlList');
     if (!rlItemsLocal.length) {
       list.innerHTML = '<div style="color:#666;font-size:12px;padding:6px">項目がありません</div>';
