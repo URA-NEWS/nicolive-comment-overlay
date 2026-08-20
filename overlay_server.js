@@ -332,6 +332,70 @@ function quizState() {
   };
 }
 
+// ============================================================
+// ルーレット機能
+// ============================================================
+const ROULETTE_MAX_ITEMS = 30;
+let roulette = {
+  items: [],        // string[]
+  visible: false,
+  spinning: false,
+  spinId: 0,        // 回すたびに+1。クライアント側でこの変化を検知してアニメ開始
+  resultIndex: null,
+  spinDurationMs: 6500,
+  spinStartedAt: 0, // 回転開始時刻(ms epoch)。途中から見たクライアントの同期用
+};
+let rouletteSpinTimer = null;
+
+function addRouletteItem(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (roulette.items.length >= ROULETTE_MAX_ITEMS) return false;
+  roulette.items.push(t);
+  return true;
+}
+
+function removeRouletteItem(index) {
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0 || i >= roulette.items.length) return false;
+  roulette.items.splice(i, 1);
+  return true;
+}
+
+function resetRoulette() {
+  roulette.items = [];
+  roulette.spinning = false;
+  roulette.resultIndex = null;
+  clearTimeout(rouletteSpinTimer);
+}
+
+function spinRoulette() {
+  if (roulette.items.length < 2 || roulette.spinning) return false;
+  const winner = Math.floor(Math.random() * roulette.items.length);
+  roulette.spinning = true;
+  roulette.resultIndex = winner;
+  roulette.spinId++;
+  roulette.spinStartedAt = Date.now();
+  clearTimeout(rouletteSpinTimer);
+  rouletteSpinTimer = setTimeout(() => {
+    roulette.spinning = false;
+  }, roulette.spinDurationMs);
+  return true;
+}
+
+function rouletteState() {
+  return {
+    items: roulette.items,
+    visible: roulette.visible,
+    spinning: roulette.spinning,
+    spinId: roulette.spinId,
+    resultIndex: roulette.resultIndex,
+    spinDurationMs: roulette.spinDurationMs,
+    spinStartedAt: roulette.spinStartedAt,
+    maxItems: ROULETTE_MAX_ITEMS,
+  };
+}
+
 // ---------- ふわっちポーリング ----------
 async function pollFwComments() {
   if (!config.liveId) { fwViewerCount = null; return; }
@@ -1042,6 +1106,7 @@ check();
       kickViewerCount,
       survey: surveyState(),
       quiz: quizState(),
+      roulette: rouletteState(),
       port: PORT,
     }));
     return;
@@ -1325,6 +1390,59 @@ check();
     clearSurvey();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // ---- ルーレット: 項目追加 ----
+  if (url.pathname === '/api/overlay/roulette/add' && req.method === 'POST') {
+    const body = await readBody(req);
+    const ok = addRouletteItem(body.text);
+    if (!ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `項目は${ROULETTE_MAX_ITEMS}個までです`, roulette: rouletteState() }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, roulette: rouletteState() }));
+    return;
+  }
+
+  // ---- ルーレット: 項目削除 ----
+  if (url.pathname === '/api/overlay/roulette/remove' && req.method === 'POST') {
+    const body = await readBody(req);
+    removeRouletteItem(body.index);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, roulette: rouletteState() }));
+    return;
+  }
+
+  // ---- ルーレット: リセット(全項目クリア) ----
+  if (url.pathname === '/api/overlay/roulette/reset' && req.method === 'POST') {
+    resetRoulette();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, roulette: rouletteState() }));
+    return;
+  }
+
+  // ---- ルーレット: 表示/非表示 ----
+  if (url.pathname === '/api/overlay/roulette/visible' && req.method === 'POST') {
+    const body = await readBody(req);
+    roulette.visible = !!body.visible;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, roulette: rouletteState() }));
+    return;
+  }
+
+  // ---- ルーレット: 回す ----
+  if (url.pathname === '/api/overlay/roulette/spin' && req.method === 'POST') {
+    const ok = spinRoulette();
+    if (!ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '項目が2個以上必要です、または既に回転中です', roulette: rouletteState() }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, roulette: rouletteState() }));
     return;
   }
 
