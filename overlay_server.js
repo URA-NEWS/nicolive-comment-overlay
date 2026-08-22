@@ -1546,6 +1546,56 @@ check();
     return;
   }
 
+  // ---- 配信統計: CSVエクスポート(Excel/スプレッドシートでの独自分析用) ----
+  if (url.pathname === '/api/overlay/stats/export.csv' && req.method === 'GET') {
+    const csvEscape = (v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      '日付', '開始時刻', '終了時刻', '配信時間(分)',
+      'ふわっちタイトル', 'Kickタイトル',
+      'ふわっち最高同接', 'Kick最高同接', 'ふわっち平均同接', 'Kick平均同接',
+      'ふわっちフォロワー開始', 'ふわっちフォロワー終了', 'ふわっち増減',
+      'Kickフォロワー開始', 'Kickフォロワー終了', 'Kick増減',
+      'コメント最多時刻', 'コメント最多件数(件/分)', 'メモ',
+    ];
+    const rows = stats.streams.map((s) => {
+      const sum = summarizeStream(s, false);
+      const fmtDt = (ms) => (ms ? new Date(ms).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false }) : '');
+      return [
+        sum.date,
+        fmtDt(sum.startedAt),
+        sum.endedAt ? fmtDt(sum.endedAt) : '(継続中)',
+        Math.round(sum.durationMs / 60000),
+        sum.fwTitle || '',
+        sum.kickTitle || '',
+        sum.peakFwViewers ?? '',
+        sum.peakKickViewers ?? '',
+        sum.avgFwViewers ?? '',
+        sum.avgKickViewers ?? '',
+        sum.fwFollowerStart ?? '',
+        sum.fwFollowerEnd ?? '',
+        sum.fwFollowerGain ?? '',
+        sum.kickFollowerStart ?? '',
+        sum.kickFollowerEnd ?? '',
+        sum.kickFollowerGain ?? '',
+        sum.peakCommentAt ? fmtDt(sum.peakCommentAt) : '',
+        sum.peakCommentCount || '',
+        sum.note || '',
+      ];
+    });
+    // ExcelでUTF-8の日本語が文字化けしないようBOMを付与
+    const BOM = String.fromCharCode(0xFEFF);
+    const csv = BOM + [header, ...rows].map((r) => r.map(csvEscape).join(',')).join('\r\n') + '\r\n';
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="nicolive_stats_${toJstDateStr(Date.now())}.csv"`,
+    });
+    res.end(csv);
+    return;
+  }
+
   // ---- 配信統計: ローカルバックアップからの復元(Renderの無料プランは再デプロイで消えるための救済) ----
   if (url.pathname === '/api/overlay/stats/restore' && req.method === 'POST') {
     const body = await readBody(req);
@@ -1568,6 +1618,28 @@ check();
     saveStats();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, restored, total: stats.streams.length }));
+    return;
+  }
+
+  // ---- 配信統計: 指定した配信データの削除 ----
+  if (url.pathname === '/api/overlay/stats/delete' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (typeof body.id !== 'string' || !body.id) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'idが指定されていません' }));
+      return;
+    }
+    if (currentStream && body.id === currentStream.id) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '計測中の配信は削除できません(先に計測を停止してください)' }));
+      return;
+    }
+    const before = stats.streams.length;
+    stats.streams = stats.streams.filter((s) => s.id !== body.id);
+    const deleted = before !== stats.streams.length;
+    saveStats();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, deleted, total: stats.streams.length }));
     return;
   }
 
