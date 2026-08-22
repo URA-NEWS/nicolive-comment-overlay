@@ -184,10 +184,9 @@
   }
   .hsChip input { margin: 0; }
 
-  /* 統計カード */
-  .hsStatCards { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  /* 統計カード(常に2列均等。3+1のような偏った折り返しを防ぐ) */
+  .hsStatCards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
   .hsStatCard {
-    flex: 1; min-width: 110px;
     background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
     padding: 8px 10px; text-align: center;
   }
@@ -207,7 +206,7 @@
 
   /* 拡大モーダル */
   .hsModalOverlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.75);
+    position: fixed; inset: 0; background: rgba(0,0,0,.94);
     z-index: 9999; display: none; align-items: center; justify-content: center; padding: 20px;
   }
   .hsModalOverlay.open { display: flex; }
@@ -492,7 +491,7 @@
       <span style="font-weight:700;color:#fff" id="hsModalTitle"></span>
       <button class="small" onclick="hsCloseChartModal()">閉じる ✕</button>
     </div>
-    <canvas id="hsModalCanvas" width="1200" height="480" style="width:100%;background:#1a1a1a;border-radius:4px;border:1px solid #333"></canvas>
+    <canvas id="hsModalCanvas" width="1200" height="480" style="width:100%;height:480px;background:#1a1a1a;border-radius:4px;border:1px solid #333"></canvas>
   </div>
 </div>
 
@@ -712,6 +711,14 @@
       if (!body || !body.classList.contains('accBody')) return;
       const open = body.classList.toggle('open');
       h.classList.toggle('open', open);
+      // 閉じている間はcanvasの表示幅が0のためグラフを描けない。
+      // 開いた直後に、このセクション内のグラフを実際の表示幅で描き直す
+      if (open) {
+        body.querySelectorAll('canvas[id^="hsCanvas_"]').forEach((cv) => {
+          const panelId = cv.id.replace('hsCanvas_', '');
+          if (typeof hsPanelState !== 'undefined' && hsPanelState[panelId]) hsRenderTabBody(panelId);
+        });
+      }
     });
   });
 
@@ -1445,7 +1452,7 @@
   function hsChartHtml(panelId) {
     return `<div class="hsChartWrap">
       <button class="hsZoomBtn" onclick="hsOpenChartModal('${panelId}')">⤢ 拡大</button>
-      <canvas id="hsCanvas_${panelId}" width="760" height="170" style="width:100%;background:#1a1a1a;border-radius:4px;border:1px solid #333"></canvas>
+      <canvas id="hsCanvas_${panelId}" width="760" height="190" style="width:100%;height:190px;background:#1a1a1a;border-radius:4px;border:1px solid #333"></canvas>
     </div>`;
   }
 
@@ -1512,18 +1519,25 @@
   }
 
   // 依存ライブラリなしの簡易折れ線グラフ(y===nullで線を分断できる)
+  // Canvasの実解像度をCSS表示サイズ×devicePixelRatioに合わせて描画することで、
+  // 画面幅に合わせて縮小表示された際に文字や線がぼやけて薄く見える問題を防ぐ
   function hsDrawChart(canvas, series) {
     if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 760;
+    const h = canvas.clientHeight || 190;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
     const ctx = canvas.getContext('2d');
-    const w = canvas.width, h = canvas.height;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const padL = 40, padR = 12, padT = 14, padB = 22;
+    const padL = 46, padR = 14, padT = 20, padB = 24;
     const plotW = w - padL - padR, plotH = h - padT - padB;
 
     const allPoints = series.flatMap((s) => s.points).filter((p) => p.y !== null && p.y !== undefined);
     if (!series.length || !allPoints.length) {
-      ctx.fillStyle = '#555';
-      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#888';
+      ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('データがありません', w / 2, h / 2);
       return;
@@ -1536,21 +1550,21 @@
     const yFor = (y) => padT + plotH - (y / maxY) * plotH;
 
     // グリッド + Y軸ラベル
-    ctx.strokeStyle = '#2a2a2a';
-    ctx.fillStyle = '#666';
-    ctx.font = '10px sans-serif';
+    ctx.strokeStyle = '#333';
+    ctx.fillStyle = '#aaa';
+    ctx.font = '12px sans-serif';
     ctx.textAlign = 'right';
     for (let i = 0; i <= 4; i++) {
       const y = padT + (plotH * i) / 4;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
       const val = Math.round(maxY * (1 - i / 4));
-      ctx.fillText(String(val), padL - 6, y + 3);
+      ctx.fillText(String(val), padL - 8, y + 4);
     }
 
     // 各系列を描画(y===nullで線を分断)
     series.forEach((s) => {
       ctx.strokeStyle = s.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       let started = false;
       s.points.forEach((p) => {
@@ -1565,17 +1579,17 @@
     let lx = padL;
     series.forEach((s) => {
       ctx.fillStyle = s.color;
-      ctx.fillRect(lx, 2, 10, 10);
-      ctx.fillStyle = '#ccc';
+      ctx.fillRect(lx, 3, 12, 12);
+      ctx.fillStyle = '#eee';
       ctx.textAlign = 'left';
-      ctx.font = '11px sans-serif';
-      ctx.fillText(s.label, lx + 14, 11);
-      lx += ctx.measureText(s.label).width + 34;
+      ctx.font = '13px sans-serif';
+      ctx.fillText(s.label, lx + 16, 13);
+      lx += ctx.measureText(s.label).width + 36;
     });
 
     // X軸(開始・終了の時刻ラベルのみ)
-    ctx.fillStyle = '#666';
-    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(hsFmtAxisDate(minX), padL, h - 6);
     ctx.textAlign = 'right';
