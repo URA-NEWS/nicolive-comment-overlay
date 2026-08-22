@@ -229,6 +229,8 @@
 <body>
 <h1>ニコ生風オーバーレイ 設定</h1>
 
+<div id="hsBackupWarnBanner" onclick="hsOpenBackupSection()" style="display:none;cursor:pointer;background:#5c1010;border:1px solid #e53e3e;border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#ffb3b3;line-height:1.6"></div>
+
 <label for="liveUrl">配信URL（ふわっち / Kick どちらでもOK・自動判別）</label>
 <input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... または https://kick.com/...">
 <button onclick="setLiveId()">設定</button>
@@ -1271,14 +1273,17 @@
     const s = list.find((x) => x.id === id);
     if (!s) { el.innerHTML = '<div class="hint">データが見つかりませんでした</div>'; return; }
     el.innerHTML = `
-      <div class="subhead">配信詳細</div>
-      <div style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:10px;margin-bottom:8px">
-        <div style="font-weight:700">${(s.fwTitle || s.kickTitle || '(タイトル不明)').replace(/</g, '&lt;')}</div>
-        <div style="font-size:12px;color:#999;margin-top:4px">${hsFmtTime(s.startedAt)} 〜 ${s.endedAt ? hsFmtTime(s.endedAt) : '(継続中)'}（${hsFmtDuration(s.durationMs)}）</div>
+      <div style="border-left:3px solid #e53e3e;background:#181414;border-radius:0 6px 6px 0;padding:12px">
+        <div class="subhead" style="margin:0 0 8px">🔍 この配信の詳細</div>
+        <div style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:10px;margin-bottom:8px">
+          <div style="font-weight:700">${(s.fwTitle || s.kickTitle || '(タイトル不明)').replace(/</g, '&lt;')}</div>
+          <div style="font-size:12px;color:#999;margin-top:4px">${hsFmtTime(s.startedAt)} 〜 ${s.endedAt ? hsFmtTime(s.endedAt) : '(継続中)'}（${hsFmtDuration(s.durationMs)}）</div>
+        </div>
+        <div id="hsPanel_stream"></div>
       </div>
-      <div id="hsPanel_stream"></div>
     `;
     hsInitPanel('stream', hsMakeDataset([s]));
+    el.scrollIntoView({ block: 'nearest' });
   }
 
   function hsDefaultRange() {
@@ -1306,18 +1311,31 @@
     const totalMs = hsRangeStreams.reduce((a, s) => a + s.durationMs, 0);
     summaryEl.innerHTML = `配信回数: <b>${streamCount}回</b>　合計配信時間: <b>${hsFmtDuration(totalMs)}</b>`;
 
+    const rangePanelWrap = document.getElementById('hsRangePanel');
+    const streamListEl = document.getElementById('hsStreamList');
+
+    if (streamCount === 1) {
+      // 配信が1件だけの期間は「期間全体のグラフ」と「配信詳細」が同じものになり紛らわしいため、
+      // 上の集計グラフは省略して詳細だけを表示する
+      rangePanelWrap.innerHTML = `<div class="hint">この期間の配信は1件のみです。下の詳細をご覧ください ↓</div>`;
+      streamListEl.innerHTML = '';
+      hsShowStreamDetail(hsRangeStreams[0].id, hsRangeStreams[0].date);
+      return;
+    }
+
     // 時系列順(古い→新しい)に並べる
     const chronological = hsRangeStreams.slice().reverse();
-    document.getElementById('hsRangePanel').innerHTML = '<div id="hsPanel_range"></div>';
+    rangePanelWrap.innerHTML = `<div class="subhead" style="margin-top:0">📊 期間全体(${streamCount}件の配信をまとめて表示)</div><div id="hsPanel_range"></div>`;
     hsInitPanel('range', hsMakeDataset(chronological));
 
-    document.getElementById('hsStreamList').innerHTML =
-      `<div class="subhead">期間内の配信一覧</div>` +
+    streamListEl.innerHTML =
+      `<div class="subhead">配信ごとに詳しく見る(クリックで下に表示)</div>` +
       hsRangeStreams.map((s) => `
         <div class="hsStreamCard" onclick="hsShowStreamDetail('${s.id}','${s.date}')">
           <b>${s.date}</b> ${(s.fwTitle || s.kickTitle || '(タイトル不明)').replace(/</g, '&lt;')}
           <span style="color:#999"> ／ ${hsFmtDuration(s.durationMs)}</span>
         </div>`).join('');
+    document.getElementById('hsStreamDetail').innerHTML = '';
   }
 
   // ---- 統計タブパネル(閲覧/最高同接続/フォロワー/コメント) 共通コンポーネント ----
@@ -1585,6 +1603,28 @@
   }
   function hsBackupStatusEl() { return document.getElementById('hsBackupStatus'); }
 
+  // バックアップ状態の警告は「配信統計」が折りたたまれていても気づけるよう、
+  // ページ上部にもバナーを出す(アコーディオン内のhsBackupStatusだけだと見落とされるため)
+  function hsShowBackupWarning(msg) {
+    const el = document.getElementById('hsBackupWarnBanner');
+    if (!el) return;
+    el.textContent = `⚠️ ${msg}(クリックで詳細を開く)`;
+    el.style.display = 'block';
+  }
+  function hsHideBackupWarning() {
+    const el = document.getElementById('hsBackupWarnBanner');
+    if (el) el.style.display = 'none';
+  }
+  function hsOpenBackupSection() {
+    const h = Array.from(document.querySelectorAll('h2.acc')).find((x) => x.textContent.trim() === '配信統計');
+    if (h) {
+      const body = h.nextElementSibling;
+      if (body && !body.classList.contains('open')) { body.classList.add('open'); h.classList.add('open'); }
+      const status = document.getElementById('hsBackupStatus');
+      if (status) status.scrollIntoView({ block: 'center' });
+    }
+  }
+
   // ファイルハンドルはIndexedDBに保存し、ページを開き直しても再利用できるようにする
   function hsIdbOpen() {
     return new Promise((resolve, reject) => {
@@ -1647,6 +1687,7 @@
         await hsBackupNow();
       } else {
         hsBackupStatusEl().innerHTML = `${handle.name}（要再許可） <button class="small" onclick="hsReconfirmBackupPermission()">許可して再開</button><div class="hint" style="margin-top:4px">ページを開き直すとブラウザの仕様で書き込み許可が一度リセットされます。ファイルは選び直さなくてOKです</div>`;
+        hsShowBackupWarning('バックアップの自動保存が停止しています(許可の再確認が必要)');
       }
     } catch (e) {
       hsBackupStatusEl().textContent = '未設定(下の「保存先を選ぶ」から設定できます)';
@@ -1660,6 +1701,7 @@
       if (perm === 'granted') {
         hsStartBackupTimer();
         await hsBackupNow();
+        hsHideBackupWarning();
       }
     } catch (e) {}
   }
@@ -1684,8 +1726,11 @@
       await writable.close();
       const now = new Date();
       hsBackupStatusEl().textContent = `✅ ${hsBackupHandle.name}（最終保存 ${hsPad(now.getHours())}:${hsPad(now.getMinutes())}・全${data.streams.length}件）`;
+      hsHideBackupWarning();
     } catch (e) {
       hsBackupStatusEl().textContent = '保存に失敗しました: ' + e.message;
+      // 権限切れ等で自動保存が止まっている可能性が高いので、折りたたみの外(ページ上部)にも警告を出す
+      hsShowBackupWarning('バックアップの自動保存に失敗しました(' + e.message + ')');
     }
   }
 
