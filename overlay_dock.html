@@ -1389,25 +1389,34 @@
 
   // streams(古い→新しい順)からタブ表示に必要な系列・統計値をまとめて作る。
   // 配信1件だけを渡せば単一配信詳細、複数渡せば期間集計になる。
+  // 配信と配信の間の「配信していない時間」をそのままグラフの横軸に使うと、
+  // 配信していた実時間がごく一部に押しつぶされて見えてしまう(株価チャートが
+  // 夜間・週末を詰めて表示するのと同じ理由)。そのため実時刻(rt)とは別に、
+  // 配信間の空白を固定の短いギャップに圧縮した「見かけ上の時刻(x)」を作って描画する
+  const HS_STREAM_GAP_MS = 5 * 60 * 1000;
   function hsMakeDataset(streams) {
     const viewerFw = [], viewerKick = [], followerFw = [], followerKick = [];
     const commentTotal = [], commentFw = [], commentKick = [];
+    let cursor = 0;
     streams.forEach((s, i) => {
+      const segStart = cursor;
+      const offset = (rt) => segStart + (rt - s.startedAt);
       if (i > 0) {
         [viewerFw, viewerKick, followerFw, followerKick, commentTotal, commentFw, commentKick]
-          .forEach((arr) => arr.push({ x: s.startedAt, y: null })); // 配信の切れ目で線を分断
+          .forEach((arr) => arr.push({ x: segStart, y: null, rt: s.startedAt })); // 配信の切れ目で線を分断
       }
       (s.samples || []).forEach((p) => {
-        viewerFw.push({ x: p.t, y: p.fw });
-        viewerKick.push({ x: p.t, y: p.kick });
-        followerFw.push({ x: p.t, y: p.fwFollower ?? null });
-        followerKick.push({ x: p.t, y: p.kickFollower ?? null });
+        viewerFw.push({ x: offset(p.t), y: p.fw, rt: p.t });
+        viewerKick.push({ x: offset(p.t), y: p.kick, rt: p.t });
+        followerFw.push({ x: offset(p.t), y: p.fwFollower ?? null, rt: p.t });
+        followerKick.push({ x: offset(p.t), y: p.kickFollower ?? null, rt: p.t });
       });
       (s.commentBuckets || []).forEach((b) => {
-        commentTotal.push({ x: b.t, y: b.count });
-        commentFw.push({ x: b.t, y: b.fw || 0 });
-        commentKick.push({ x: b.t, y: b.kick || 0 });
+        commentTotal.push({ x: offset(b.t), y: b.count, rt: b.t });
+        commentFw.push({ x: offset(b.t), y: b.fw || 0, rt: b.t });
+        commentKick.push({ x: offset(b.t), y: b.kick || 0, rt: b.t });
       });
+      cursor = segStart + Math.max(0, s.durationMs || 0) + HS_STREAM_GAP_MS;
     });
     const peakFw = Math.max(0, ...streams.map((s) => s.peakFwViewers || 0));
     const peakKick = Math.max(0, ...streams.map((s) => s.peakKickViewers || 0));
@@ -1610,6 +1619,10 @@
 
     const xs = series.flatMap((s) => s.points.map((p) => p.x));
     const minX = Math.min(...xs), maxX = Math.max(...xs);
+    // X軸ラベルは(配信間の空白を詰めた)見かけ上の時刻ではなく、実際の時刻(rt)で表示する
+    const rts = series.flatMap((s) => s.points.map((p) => (p.rt !== undefined ? p.rt : p.x))).filter((v) => v !== null && v !== undefined);
+    const realMinX = rts.length ? Math.min(...rts) : minX;
+    const realMaxX = rts.length ? Math.max(...rts) : maxX;
 
     const xFor = (x) => padL + (maxX === minX ? plotW / 2 : ((x - minX) / (maxX - minX)) * plotW);
     const yFor = (y) => padT + plotH - ((y - minY) / (maxY - minY)) * plotH;
@@ -1656,9 +1669,9 @@
     ctx.fillStyle = '#aaa';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(hsFmtAxisDate(minX), padL, h - 6);
+    ctx.fillText(hsFmtAxisDate(realMinX), padL, h - 6);
     ctx.textAlign = 'right';
-    ctx.fillText(hsFmtAxisDate(maxX), w - padR, h - 6);
+    ctx.fillText(hsFmtAxisDate(realMaxX), w - padR, h - 6);
 
     // マウスホバーで時刻・数値を確認できるようにする(canvasごとに初回のみイベント登録)
     const allX = Array.from(new Set(xs)).sort((a, b) => a - b);
@@ -1686,12 +1699,14 @@
         const d = Math.abs(meta.xFor(x) - mx);
         if (d < nearestDist) { nearestDist = d; nearest = x; }
       }
+      let nearestRt = nearest;
       const lines = meta.series.map((s) => {
         const pt = s.points.find((p) => p.x === nearest);
+        if (pt && pt.rt !== undefined && pt.rt !== null) nearestRt = pt.rt;
         const val = (pt && pt.y !== null && pt.y !== undefined) ? pt.y.toLocaleString('ja-JP') : '-';
         return `<span style="color:${s.color}">●</span> ${s.label}: ${val}`;
       }).join('<br>');
-      tip.innerHTML = `${hsFmtAxisDate(nearest)}<br>${lines}`;
+      tip.innerHTML = `${hsFmtAxisDate(nearestRt)}<br>${lines}`;
       tip.style.display = 'block';
       tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 190) + 'px';
       tip.style.top = Math.min(e.clientY + 14, window.innerHeight - 80) + 'px';
