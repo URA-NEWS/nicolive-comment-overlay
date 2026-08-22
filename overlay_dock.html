@@ -229,7 +229,6 @@
 <body>
 <h1>ニコ生風オーバーレイ 設定</h1>
 
-<div id="hsBackupWarnBanner" onclick="hsOpenBackupSection()" style="display:none;cursor:pointer;background:#5c1010;border:1px solid #e53e3e;border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#ffb3b3;line-height:1.6"></div>
 
 <label for="liveUrl">配信URL（ふわっち / Kick どちらでもOK・自動判別）</label>
 <input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... または https://kick.com/...">
@@ -415,18 +414,13 @@
 <div id="hsStreamDetail" style="margin-top:10px"></div>
 <div class="hint">閲覧数・フォロワー数は5分おきに記録。配信の開始/終了は接続状況から自動判定します(両プラットフォームが5分間非配信で終了扱い)</div>
 
-<div class="subhead" style="margin-top:18px">ローカルバックアップ(無料プランでも記録を残す)</div>
-<div class="hint">全配信のデータを<b>PC上の1つのファイルにまとめて</b>上書き保存します(配信ごとにファイルが分かれることはありません)。Renderの無料プランは再デプロイのたびに配信統計が消えるため、消えたら同じファイルから復元してください</div>
-<div id="hsBackupStatus" class="hint" style="margin-top:8px">確認中...</div>
+<div class="subhead" style="margin-top:18px">バックアップ(念のため)</div>
+<div class="hint">Persistent Diskを設定していれば通常は自動でサーバー側に保存されます。念のため、ここから手動でJSONファイルに保存・復元もできます</div>
 <div class="speed-row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
-  <button class="small" onclick="hsChooseBackupFile()">保存先を選ぶ(自動保存 開始/変更)</button>
-  <button class="small" onclick="hsBackupNow()">今すぐ保存</button>
+  <button class="small" onclick="hsExportDownload()">JSONを保存</button>
+  <button class="small" onclick="hsRestoreFromBackup()">JSONから復元</button>
 </div>
-<div class="speed-row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
-  <button class="small" onclick="hsRestoreFromBackup()">このファイルから復元</button>
-  <button class="small" onclick="hsExportDownload()">JSONを手動保存(予備)</button>
-</div>
-<div class="hint">Chrome/Edge非対応ブラウザでは「保存先を選ぶ」が使えないため、「JSONを手動保存」でこまめにダウンロードし、「このファイルから復元」でそのファイルを選んでください</div>
+<div id="hsBackupStatus" class="hint" style="margin-top:8px"></div>
 </div>
 
 <h2 class="acc">設定</h2>
@@ -1592,146 +1586,15 @@
     return `${d.getMonth() + 1}/${d.getDate()} ${hsPad(d.getHours())}:${hsPad(d.getMinutes())}`;
   }
 
-  // ---------- 配信統計: ローカルバックアップ(無料プランでもPC側に記録を残す) ----------
-  // ふわっち/Kickの自己修復ポーリングと同じ「ドック(=配信者のPC)がリレーする」パターン。
-  // File System Access API(Chrome/Edge)で選んだファイルへ5分おきに自動保存する。
-  let hsBackupHandle = null;
-  let hsBackupTimer = null;
-
-  function hsSupportsFSAccess() {
-    return typeof window.showSaveFilePicker === 'function';
-  }
+  // ---------- 配信統計: バックアップ(手動・念のため) ----------
+  // 自動保存はRenderのPersistent Disk(サーバー側)で行う想定のため、
+  // ここでは複雑な自動保存の仕組みは持たず、シンプルな手動JSON保存/復元のみを提供する。
   function hsBackupStatusEl() { return document.getElementById('hsBackupStatus'); }
-
-  // バックアップ状態の警告は「配信統計」が折りたたまれていても気づけるよう、
-  // ページ上部にもバナーを出す(アコーディオン内のhsBackupStatusだけだと見落とされるため)
-  function hsShowBackupWarning(msg) {
-    const el = document.getElementById('hsBackupWarnBanner');
-    if (!el) return;
-    el.textContent = `⚠️ ${msg}(クリックで詳細を開く)`;
-    el.style.display = 'block';
-  }
-  function hsHideBackupWarning() {
-    const el = document.getElementById('hsBackupWarnBanner');
-    if (el) el.style.display = 'none';
-  }
-  function hsOpenBackupSection() {
-    const h = Array.from(document.querySelectorAll('h2.acc')).find((x) => x.textContent.trim() === '配信統計');
-    if (h) {
-      const body = h.nextElementSibling;
-      if (body && !body.classList.contains('open')) { body.classList.add('open'); h.classList.add('open'); }
-      const status = document.getElementById('hsBackupStatus');
-      if (status) status.scrollIntoView({ block: 'center' });
-    }
-  }
-
-  // ファイルハンドルはIndexedDBに保存し、ページを開き直しても再利用できるようにする
-  function hsIdbOpen() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open('nicolive_overlay_dock', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('handles');
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  async function hsIdbSet(key, val) {
-    const db = await hsIdbOpen();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('handles', 'readwrite');
-      tx.objectStore('handles').put(val, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-  async function hsIdbGet(key) {
-    const db = await hsIdbOpen();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('handles', 'readonly');
-      const req = tx.objectStore('handles').get(key);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  // 「1つのファイルに全配信データをまとめて上書き保存」がこの機能の全て。
-  // 配信ごとにファイルが増えることはない(常に同じファイルへの上書き)。
-  function hsBackupUnsupportedMsg() {
-    return 'このブラウザは自動保存に対応していません(Chrome/Edgeでご利用ください)。下の「JSONを手動保存」で代用してください。';
-  }
-
-  async function hsChooseBackupFile() {
-    if (!hsSupportsFSAccess()) { hsBackupStatusEl().textContent = hsBackupUnsupportedMsg(); return; }
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: 'nicolive_stats_backup.json',
-        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
-      });
-      hsBackupHandle = handle;
-      await hsIdbSet('backupHandle', handle);
-      hsStartBackupTimer();
-      await hsBackupNow();
-    } catch (e) {
-      if (e.name !== 'AbortError') hsBackupStatusEl().textContent = 'ファイルの選択に失敗しました: ' + e.message;
-    }
-  }
-
-  async function hsTryResumeBackupHandle() {
-    if (!hsSupportsFSAccess()) { hsBackupStatusEl().textContent = hsBackupUnsupportedMsg(); return; }
-    try {
-      const handle = await hsIdbGet('backupHandle');
-      if (!handle) { hsBackupStatusEl().textContent = '未設定(下の「保存先を選ぶ」から設定できます)'; return; }
-      hsBackupHandle = handle;
-      const perm = await handle.queryPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        hsStartBackupTimer();
-        await hsBackupNow();
-      } else {
-        hsBackupStatusEl().innerHTML = `${handle.name}（要再許可） <button class="small" onclick="hsReconfirmBackupPermission()">許可して再開</button><div class="hint" style="margin-top:4px">ページを開き直すとブラウザの仕様で書き込み許可が一度リセットされます。ファイルは選び直さなくてOKです</div>`;
-        hsShowBackupWarning('バックアップの自動保存が停止しています(許可の再確認が必要)');
-      }
-    } catch (e) {
-      hsBackupStatusEl().textContent = '未設定(下の「保存先を選ぶ」から設定できます)';
-    }
-  }
-
-  async function hsReconfirmBackupPermission() {
-    if (!hsBackupHandle) return;
-    try {
-      const perm = await hsBackupHandle.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        hsStartBackupTimer();
-        await hsBackupNow();
-        hsHideBackupWarning();
-      }
-    } catch (e) {}
-  }
-
-  function hsStartBackupTimer() {
-    if (hsBackupTimer) clearInterval(hsBackupTimer);
-    hsBackupTimer = setInterval(hsBackupNow, 5 * 60 * 1000); // サンプリング間隔と合わせて5分おき
-  }
 
   async function hsFetchExportData() {
     const res = await fetch('/api/overlay/stats/export');
     if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
     return res.json();
-  }
-
-  async function hsBackupNow() {
-    if (!hsBackupHandle) return;
-    try {
-      const data = await hsFetchExportData();
-      const writable = await hsBackupHandle.createWritable();
-      await writable.write(JSON.stringify(data, null, 2));
-      await writable.close();
-      const now = new Date();
-      hsBackupStatusEl().textContent = `✅ ${hsBackupHandle.name}（最終保存 ${hsPad(now.getHours())}:${hsPad(now.getMinutes())}・全${data.streams.length}件）`;
-      hsHideBackupWarning();
-    } catch (e) {
-      hsBackupStatusEl().textContent = '保存に失敗しました: ' + e.message;
-      // 権限切れ等で自動保存が止まっている可能性が高いので、折りたたみの外(ページ上部)にも警告を出す
-      hsShowBackupWarning('バックアップの自動保存に失敗しました(' + e.message + ')');
-    }
   }
 
   async function hsExportDownload() {
@@ -1746,31 +1609,26 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      hsBackupStatusEl().textContent = '✅ 保存しました';
     } catch (e) {
-      hsBackupStatusEl().textContent = 'JSONの書き出しに失敗しました: ' + e.message;
+      hsBackupStatusEl().textContent = '保存に失敗しました: ' + e.message;
     }
   }
 
   async function hsRestoreFromBackup() {
     try {
-      let file;
-      if (hsSupportsFSAccess()) {
-        const [handle] = await window.showOpenFilePicker({ types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
-        file = await handle.getFile();
-      } else {
-        file = await new Promise((resolve, reject) => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = 'application/json';
-          input.onchange = () => resolve(input.files[0]);
-          input.click();
-        });
-      }
+      const file = await new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.onchange = () => resolve(input.files[0]);
+        input.click();
+      });
       if (!file) return;
-      if (file.size === 0) throw new Error('選択したファイルは空です(自動保存がまだ一度も実行されていない可能性があります)。「今すぐ保存」を押してから数秒待つか、「JSONを手動保存」で作成したファイルを選んでください');
+      if (file.size === 0) throw new Error('選択したファイルは空です');
       const text = await file.text();
       let data;
-      try { data = JSON.parse(text); } catch { throw new Error('JSONとして読み取れませんでした。この機能で保存/ダウンロードしたファイルを選んでください'); }
+      try { data = JSON.parse(text); } catch { throw new Error('JSONとして読み取れませんでした。この機能で保存したファイルを選んでください'); }
       if (!data || !Array.isArray(data.streams)) throw new Error('形式が不正です(配信データが含まれていません)');
       const res = await fetch('/api/overlay/stats/restore', {
         method: 'POST',
@@ -1783,7 +1641,7 @@
       hsRenderCalendar();
       hsLoadRange();
     } catch (e) {
-      if (e.name !== 'AbortError') hsBackupStatusEl().textContent = '復元に失敗しました: ' + e.message;
+      hsBackupStatusEl().textContent = '復元に失敗しました: ' + e.message;
     }
   }
 
@@ -1791,7 +1649,6 @@
     hsDefaultRange();
     hsRenderCalendar();
     hsLoadRange();
-    hsTryResumeBackupHandle();
   }
   hsInit();
 
