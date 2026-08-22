@@ -414,14 +414,17 @@
 <div class="hint">閲覧数・フォロワー数は5分おきに記録。配信の開始/終了は接続状況から自動判定します(両プラットフォームが5分間非配信で終了扱い)</div>
 
 <div class="subhead" style="margin-top:18px">ローカルバックアップ(無料プランでも記録を残す)</div>
-<div id="hsBackupStatus" class="hint">確認中...</div>
+<div class="hint">全配信のデータを<b>PC上の1つのファイルにまとめて</b>上書き保存します(配信ごとにファイルが分かれることはありません)。Renderの無料プランは再デプロイのたびに配信統計が消えるため、消えたら同じファイルから復元してください</div>
+<div id="hsBackupStatus" class="hint" style="margin-top:8px">確認中...</div>
 <div class="speed-row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
-  <button class="small" onclick="hsChooseBackupFile()">バックアップ先を選択</button>
-  <button class="small" onclick="hsBackupNow()">今すぐバックアップ</button>
-  <button class="small" onclick="hsRestoreFromBackup()">バックアップから復元</button>
-  <button class="small" onclick="hsExportDownload()">JSONをダウンロード</button>
+  <button class="small" onclick="hsChooseBackupFile()">保存先を選ぶ(自動保存 開始/変更)</button>
+  <button class="small" onclick="hsBackupNow()">今すぐ保存</button>
 </div>
-<div class="hint">Renderの無料プランは再デプロイのたびに配信統計が消えます。「バックアップ先を選択」でPC上のファイルを指定すると5分おきに自動保存され、消えても「バックアップから復元」で元に戻せます(Chrome/Edge対応。それ以外のブラウザは「JSONをダウンロード」で手動保存してください)</div>
+<div class="speed-row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
+  <button class="small" onclick="hsRestoreFromBackup()">このファイルから復元</button>
+  <button class="small" onclick="hsExportDownload()">JSONを手動保存(予備)</button>
+</div>
+<div class="hint">Chrome/Edge非対応ブラウザでは「保存先を選ぶ」が使えないため、「JSONを手動保存」でこまめにダウンロードし、「このファイルから復元」でそのファイルを選んでください</div>
 </div>
 
 <h2 class="acc">設定</h2>
@@ -1610,11 +1613,14 @@
     });
   }
 
+  // 「1つのファイルに全配信データをまとめて上書き保存」がこの機能の全て。
+  // 配信ごとにファイルが増えることはない(常に同じファイルへの上書き)。
+  function hsBackupUnsupportedMsg() {
+    return 'このブラウザは自動保存に対応していません(Chrome/Edgeでご利用ください)。下の「JSONを手動保存」で代用してください。';
+  }
+
   async function hsChooseBackupFile() {
-    if (!hsSupportsFSAccess()) {
-      hsBackupStatusEl().textContent = 'このブラウザは自動バックアップに対応していません(Chrome/Edgeでご利用ください)。「JSONをダウンロード」で手動保存してください。';
-      return;
-    }
+    if (!hsSupportsFSAccess()) { hsBackupStatusEl().textContent = hsBackupUnsupportedMsg(); return; }
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: 'nicolive_stats_backup.json',
@@ -1625,28 +1631,25 @@
       hsStartBackupTimer();
       await hsBackupNow();
     } catch (e) {
-      if (e.name !== 'AbortError') hsBackupStatusEl().textContent = 'バックアップ先の選択に失敗しました: ' + e.message;
+      if (e.name !== 'AbortError') hsBackupStatusEl().textContent = 'ファイルの選択に失敗しました: ' + e.message;
     }
   }
 
   async function hsTryResumeBackupHandle() {
-    if (!hsSupportsFSAccess()) {
-      hsBackupStatusEl().textContent = 'このブラウザは自動バックアップに対応していません(Chrome/Edgeでご利用ください)。「JSONをダウンロード」で手動保存してください。';
-      return;
-    }
+    if (!hsSupportsFSAccess()) { hsBackupStatusEl().textContent = hsBackupUnsupportedMsg(); return; }
     try {
       const handle = await hsIdbGet('backupHandle');
-      if (!handle) { hsBackupStatusEl().textContent = '未設定(「バックアップ先を選択」から設定できます)'; return; }
+      if (!handle) { hsBackupStatusEl().textContent = '未設定(下の「保存先を選ぶ」から設定できます)'; return; }
       hsBackupHandle = handle;
       const perm = await handle.queryPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
         hsStartBackupTimer();
         await hsBackupNow();
       } else {
-        hsBackupStatusEl().innerHTML = `バックアップ先: ${handle.name}（要再許可） <button class="small" onclick="hsReconfirmBackupPermission()">書き込みを許可して自動保存を再開</button><div class="hint" style="margin-top:4px">ページを開き直すとブラウザの仕様で書き込み許可が一度リセットされます。このボタンを押すと5分おきの自動保存が再び始まります(ファイル自体は選び直す必要はありません)</div>`;
+        hsBackupStatusEl().innerHTML = `${handle.name}（要再許可） <button class="small" onclick="hsReconfirmBackupPermission()">許可して再開</button><div class="hint" style="margin-top:4px">ページを開き直すとブラウザの仕様で書き込み許可が一度リセットされます。ファイルは選び直さなくてOKです</div>`;
       }
     } catch (e) {
-      hsBackupStatusEl().textContent = '未設定(「バックアップ先を選択」から設定できます)';
+      hsBackupStatusEl().textContent = '未設定(下の「保存先を選ぶ」から設定できます)';
     }
   }
 
@@ -1666,33 +1669,41 @@
     hsBackupTimer = setInterval(hsBackupNow, 5 * 60 * 1000); // サンプリング間隔と合わせて5分おき
   }
 
+  async function hsFetchExportData() {
+    const res = await fetch('/api/overlay/stats/export');
+    if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+    return res.json();
+  }
+
   async function hsBackupNow() {
     if (!hsBackupHandle) return;
     try {
-      const res = await fetch('/api/overlay/stats/export');
-      const data = await res.json();
+      const data = await hsFetchExportData();
       const writable = await hsBackupHandle.createWritable();
       await writable.write(JSON.stringify(data, null, 2));
       await writable.close();
       const now = new Date();
-      hsBackupStatusEl().textContent = `✅ バックアップ先: ${hsBackupHandle.name}（最終保存 ${hsPad(now.getHours())}:${hsPad(now.getMinutes())}）`;
+      hsBackupStatusEl().textContent = `✅ ${hsBackupHandle.name}（最終保存 ${hsPad(now.getHours())}:${hsPad(now.getMinutes())}・全${data.streams.length}件）`;
     } catch (e) {
-      hsBackupStatusEl().textContent = 'バックアップの保存に失敗しました: ' + e.message;
+      hsBackupStatusEl().textContent = '保存に失敗しました: ' + e.message;
     }
   }
 
   async function hsExportDownload() {
-    const res = await fetch('/api/overlay/stats/export');
-    const data = await res.json();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `nicolive_stats_backup_${hsJstDateStr(Date.now())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    try {
+      const data = await hsFetchExportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nicolive_stats_backup_${hsJstDateStr(Date.now())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      hsBackupStatusEl().textContent = 'JSONの書き出しに失敗しました: ' + e.message;
+    }
   }
 
   async function hsRestoreFromBackup() {
@@ -1711,16 +1722,19 @@
         });
       }
       if (!file) return;
+      if (file.size === 0) throw new Error('選択したファイルは空です(自動保存がまだ一度も実行されていない可能性があります)。「今すぐ保存」を押してから数秒待つか、「JSONを手動保存」で作成したファイルを選んでください');
       const text = await file.text();
-      const data = JSON.parse(text);
-      if (!Array.isArray(data.streams)) throw new Error('形式が不正です');
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error('JSONとして読み取れませんでした。この機能で保存/ダウンロードしたファイルを選んでください'); }
+      if (!data || !Array.isArray(data.streams)) throw new Error('形式が不正です(配信データが含まれていません)');
       const res = await fetch('/api/overlay/stats/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ streams: data.streams }),
       });
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
       const result = await res.json();
-      hsBackupStatusEl().textContent = `✅ ${result.restored}件の配信記録を復元しました(合計${result.total}件)`;
+      hsBackupStatusEl().textContent = `✅ 復元完了: ファイル内の${result.restored}件を反映(現在の合計${result.total}件)`;
       hsRenderCalendar();
       hsLoadRange();
     } catch (e) {
