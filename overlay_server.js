@@ -569,7 +569,7 @@ setInterval(pollFollowerCount, 5000);
 // ============================================================
 const STATS_FILE = path.join(DATA_DIR, 'stats_history.json');
 const STATS_TICK_MS = 60 * 1000;              // 生存確認(配信中か)の間隔
-const STATS_SAMPLE_MS = 5 * 60 * 1000;        // 閲覧数サンプリング間隔(5分)
+const STATS_SAMPLE_MS = 60 * 1000;            // 閲覧数サンプリング間隔(1分。実際の閲覧数は3〜15秒おきに取得済みのため追加通信なし)
 const STATS_OFFLINE_GRACE_MS = 5 * 60 * 1000; // 両プラットフォームがこの時間非配信なら「配信終了」
 const STATS_MAX_STREAMS = 300;                // 保持する配信記録の上限件数(古い順に削除)
 
@@ -626,7 +626,7 @@ function newStreamRecord() {
     peakKickViewers: null,
     sumFwViewers: 0, countFwViewers: 0,
     sumKickViewers: 0, countKickViewers: 0,
-    samples: [], // {t, fw, kick} を5分おきに追加
+    samples: [], // {t, fw, kick} を1分おきに追加
     commentBuckets: [], // {t, count} コメント/ギフト等の件数を1分おきに追加(盛り上がりタイミング特定用)
   };
 }
