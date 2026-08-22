@@ -146,6 +146,13 @@ let itemImageMap = {};
 function addComment(obj) {
   collectVote(obj.name, obj.text);
   collectQuizVote(obj.name, obj.text);
+  // 配信統計: コメントが多く流れたタイミングを後で特定するため、集計中の配信があれば1分単位でカウント(プラットフォーム別)
+  if (currentStream && !statsPaused) {
+    currentCommentTick.total++;
+    if (obj.platform === 'fw') currentCommentTick.fw++;
+    else if (obj.platform === 'kick') currentCommentTick.kick++;
+    else if (obj.platform === 'tiktok') currentCommentTick.tiktok++;
+  }
   commentIdCounter++;
   recentComments.push({ id: commentIdCounter, ts: Date.now(), ...obj });
   if (recentComments.length > 200) recentComments = recentComments.slice(-200);
@@ -482,7 +489,8 @@ async function pollKickStats() {
         const v = Number(ch?.stream?.viewer_count);
         kickLiveNow = !!ch?.stream?.is_live;
         kickViewerCount = ch?.stream?.is_live && Number.isFinite(v) ? v : null;
-        const t = ch?.stream?.stream_title || ch?.stream?.title;
+        // stream_titleはstreamのネストではなくチャンネル直下(公式API v1のスキーマ)
+        const t = ch?.stream_title || ch?.stream?.stream_title || ch?.stream?.title;
         if (typeof t === 'string' && t) lastKickTitle = t;
       }
     }
@@ -577,6 +585,8 @@ function toJstDateStr(ms) {
 
 let currentStream = null;    // 進行中の配信レコード(stats.streamsの末尾要素への参照)
 let statsOfflineTicks = 0;
+let statsPaused = false;     // ドックの「計測を停止」スイッチ。trueの間は自動開始/終了判定を止める
+let currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0 }; // 直近1分間のコメント/ギフト等の件数(プラットフォーム別・addCommentでカウント)
 
 // サーバー再起動/redeployで正常終了できなかった配信記録が残っていたら、その時点で確定させる
 (function recoverUnfinishedStream() {
@@ -609,10 +619,35 @@ function newStreamRecord() {
     sumFwViewers: 0, countFwViewers: 0,
     sumKickViewers: 0, countKickViewers: 0,
     samples: [], // {t, fw, kick} を5分おきに追加
+    commentBuckets: [], // {t, count} コメント/ギフト等の件数を1分おきに追加(盛り上がりタイミング特定用)
   };
 }
 
+function finalizeCurrentStream() {
+  if (!currentStream) return;
+  currentStream.endedAt = Date.now();
+  currentStream.fwFollowerEnd = followerCount;
+  currentStream.kickFollowerEnd = kickFollowerCount;
+  console.log(`[統計] 配信記録を終了: ${currentStream.id}`);
+  currentStream = null;
+  statsOfflineTicks = 0;
+  saveStats();
+}
+
 function statsTick() {
+  // コメント件数の1分バケットは、集計中の配信がある限り(一時停止中でも)そのまま積み立てる
+  if (currentStream) {
+    currentStream.commentBuckets.push({
+      t: Date.now(),
+      count: currentCommentTick.total,
+      fw: currentCommentTick.fw,
+      kick: currentCommentTick.kick,
+      tiktok: currentCommentTick.tiktok,
+    });
+    if (currentStream.commentBuckets.length > 1000) currentStream.commentBuckets = currentStream.commentBuckets.slice(-1000);
+    currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0 };
+  }
+  if (statsPaused) return; // 手動停止中は自動開始/終了判定を行わない
   // 表示用のfwViewerCount/kickViewerCountは配信終了直後も直近値を保持することがあるため、
   // 「今回のポーリングで実際に生存確認できたか」を表すfwLiveNow/kickLiveNowで判定する
   const isLive = fwLiveNow || kickLiveNow;
@@ -632,13 +667,7 @@ function statsTick() {
   } else if (currentStream) {
     statsOfflineTicks++;
     if (statsOfflineTicks * STATS_TICK_MS >= STATS_OFFLINE_GRACE_MS) {
-      currentStream.endedAt = Date.now();
-      currentStream.fwFollowerEnd = followerCount;
-      currentStream.kickFollowerEnd = kickFollowerCount;
-      console.log(`[統計] 配信記録を終了: ${currentStream.id}`);
-      currentStream = null;
-      statsOfflineTicks = 0;
-      saveStats();
+      finalizeCurrentStream();
     }
   }
 }
@@ -651,7 +680,14 @@ function statsSampleTick() {
   // (配信終了直後の猶予期間中は表示用キャッシュ値が古いまま残っている場合があるため)
   const sampleFw = fwLiveNow ? fwViewerCount : null;
   const sampleKick = kickLiveNow ? kickViewerCount : null;
-  currentStream.samples.push({ t: Date.now(), fw: sampleFw, kick: sampleKick });
+  // フォロワー数の推移グラフ用に、閲覧数と同じタイミングでフォロワー数もサンプリングしておく
+  currentStream.samples.push({
+    t: Date.now(),
+    fw: sampleFw,
+    kick: sampleKick,
+    fwFollower: followerCount,
+    kickFollower: kickFollowerCount,
+  });
   if (currentStream.samples.length > 500) currentStream.samples = currentStream.samples.slice(-500);
   if (sampleFw !== null) {
     currentStream.sumFwViewers += sampleFw;
@@ -673,6 +709,11 @@ setInterval(statsSampleTick, STATS_SAMPLE_MS);
 function summarizeStream(s, includeSamples) {
   const avgFw = s.countFwViewers ? Math.round(s.sumFwViewers / s.countFwViewers) : null;
   const avgKick = s.countKickViewers ? Math.round(s.sumKickViewers / s.countKickViewers) : null;
+  // コメント/ギフト等が最も多く流れた1分間を特定
+  let peakCommentBucket = null;
+  for (const b of (s.commentBuckets || [])) {
+    if (b.count > 0 && (!peakCommentBucket || b.count > peakCommentBucket.count)) peakCommentBucket = b;
+  }
   const out = {
     id: s.id,
     startedAt: s.startedAt,
@@ -694,9 +735,14 @@ function summarizeStream(s, includeSamples) {
     avgFwViewers: avgFw,
     avgKickViewers: avgKick,
     durationMs: (s.endedAt || Date.now()) - s.startedAt,
+    peakCommentAt: peakCommentBucket ? peakCommentBucket.t : null,
+    peakCommentCount: peakCommentBucket ? peakCommentBucket.count : 0,
     note: s.note || '',
   };
-  if (includeSamples) out.samples = s.samples;
+  if (includeSamples) {
+    out.samples = s.samples;
+    out.commentBuckets = s.commentBuckets;
+  }
   return out;
 }
 
@@ -1273,12 +1319,13 @@ check();
       survey: surveyState(),
       quiz: quizState(),
       roulette: rouletteState(),
-      statsRecording: currentStream ? {
-        active: true,
-        startedAt: currentStream.startedAt,
-        fwTitle: currentStream.fwTitle,
-        kickTitle: currentStream.kickTitle,
-      } : { active: false },
+      statsRecording: {
+        active: !!currentStream,
+        paused: statsPaused,
+        startedAt: currentStream ? currentStream.startedAt : null,
+        fwTitle: currentStream ? currentStream.fwTitle : '',
+        kickTitle: currentStream ? currentStream.kickTitle : '',
+      },
       port: PORT,
     }));
     return;
@@ -1513,6 +1560,18 @@ check();
     saveStats();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, restored, total: stats.streams.length }));
+    return;
+  }
+
+  // ---- 配信統計: 手動での計測停止/再開 ----
+  // paused:true にすると進行中の記録を即座に確定させ、以後は配信中でも自動記録しない。
+  // paused:false に戻すと通常の自動判定に戻る(配信中なら次のtickで新規記録を開始)
+  if (url.pathname === '/api/overlay/stats/pause' && req.method === 'POST') {
+    const body = await readBody(req);
+    statsPaused = !!body.paused;
+    if (statsPaused) finalizeCurrentStream();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, paused: statsPaused }));
     return;
   }
 
