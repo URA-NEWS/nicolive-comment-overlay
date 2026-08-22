@@ -204,6 +204,13 @@
   }
   .hsZoomBtn:hover { background: #000; color: #fff; }
 
+  /* グラフのホバーツールチップ */
+  .hsTooltip {
+    position: fixed; display: none; z-index: 10000; pointer-events: none;
+    background: #111; border: 1px solid #444; border-radius: 4px;
+    padding: 6px 9px; font-size: 12px; color: #eee; line-height: 1.6; white-space: nowrap;
+  }
+
   /* 拡大モーダル */
   .hsModalOverlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.94);
@@ -420,6 +427,13 @@
   <button class="small" onclick="hsRestoreFromBackup()">JSONから復元</button>
 </div>
 <div id="hsBackupStatus" class="hint" style="margin-top:8px"></div>
+
+<div class="subhead" style="margin-top:18px">統計をCSVで書き出す</div>
+<div class="hint">全配信の統計データをExcel/スプレッドシートで開ける形式で書き出します(復元用ではなく閲覧・分析用です)</div>
+<div class="speed-row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
+  <button class="small" onclick="hsExportCsv()">CSVをダウンロード</button>
+</div>
+<div id="hsCsvStatus" class="hint" style="margin-top:8px"></div>
 </div>
 
 <h2 class="acc">設定</h2>
@@ -485,6 +499,7 @@
 </div>
 <div id="log"></div>
 
+<div id="hsTooltip" class="hsTooltip"></div>
 <div class="hsModalOverlay" id="hsChartModal" onclick="hsCloseChartModal(event)">
   <div class="hsModalBox" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -1275,7 +1290,10 @@
     if (!s) { el.innerHTML = '<div class="hint">データが見つかりませんでした</div>'; return; }
     el.innerHTML = `
       <div style="border-left:3px solid #e53e3e;background:#181414;border-radius:0 6px 6px 0;padding:12px">
-        <div class="subhead" style="margin:0 0 8px">🔍 この配信の詳細</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+          <div class="subhead" style="margin:0">🔍 この配信の詳細</div>
+          <button class="small" style="background:#3a1414;border-color:#7a2020;color:#ff9d9d" onclick="hsDeleteStream('${s.id}')">🗑 この配信を削除</button>
+        </div>
         <div style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:10px;margin-bottom:8px">
           <div style="font-weight:700">${(s.fwTitle || s.kickTitle || '(タイトル不明)').replace(/</g, '&lt;')}</div>
           <div style="font-size:12px;color:#999;margin-top:4px">${hsFmtTime(s.startedAt)} 〜 ${s.endedAt ? hsFmtTime(s.endedAt) : '(継続中)'}（${hsFmtDuration(s.durationMs)}）</div>
@@ -1285,6 +1303,24 @@
     `;
     hsInitPanel('stream', hsMakeDataset([s]));
     el.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function hsDeleteStream(id) {
+    if (!confirm('この配信のデータを削除します。元に戻せません。よろしいですか？')) return;
+    try {
+      const res = await fetch('/api/overlay/stats/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || `サーバーエラー(${res.status})`);
+      document.getElementById('hsStreamDetail').innerHTML = '';
+      hsRenderCalendar();
+      hsLoadRange();
+    } catch (e) {
+      alert('削除に失敗しました: ' + e.message);
+    }
   }
 
   function hsDefaultRange() {
@@ -1458,7 +1494,9 @@
 
   function hsDrawPanelChart(panelId, tabKey) {
     const canvas = document.getElementById(`hsCanvas_${panelId}`);
-    hsDrawChart(canvas, hsSeriesFor(panelId, tabKey));
+    // フォロワー数は絶対値が大きく変化が小さいため、0基準だと線がほぼ平らに見えてしまう。
+    // 実際の変化幅を基準にスケーリングする
+    hsDrawChart(canvas, hsSeriesFor(panelId, tabKey), { zeroBased: tabKey !== 'follower' });
   }
 
   function hsRenderTabBody(panelId) {
@@ -1475,7 +1513,6 @@
           <div class="hsStatCard fw"><div class="label">ふわっち平均</div><div class="value" style="font-size:15px">${d.avg.fw ?? '-'}${d.avg.fw !== null ? '人' : ''}</div></div>
           <div class="hsStatCard kick"><div class="label">Kick平均</div><div class="value" style="font-size:15px">${d.avg.kick ?? '-'}${d.avg.kick !== null ? '人' : ''}</div></div>
         </div>
-        ${d.peakComment ? `<div class="hint">コメント最多タイミング: ${hsFmtTime(d.peakComment.at)}頃(${hsFmtElapsed(d.peakComment.at - d.peakComment.startedAt)}、${d.peakComment.count}件/分)</div>` : ''}
       `;
       return;
     }
@@ -1496,7 +1533,9 @@
     }
 
     if (st.tab === 'comment') {
-      body.innerHTML = `${hsChipsHtml(panelId, ['total', 'fw', 'kick'])}${hsChartHtml(panelId)}`;
+      body.innerHTML = `
+        ${d.peakComment ? `<div class="hint" style="margin-bottom:6px">コメント最多タイミング: ${hsFmtTime(d.peakComment.at)}頃(${hsFmtElapsed(d.peakComment.at - d.peakComment.startedAt)}、${d.peakComment.count}件/分)</div>` : ''}
+        ${hsChipsHtml(panelId, ['total', 'fw', 'kick'])}${hsChartHtml(panelId)}`;
       hsDrawPanelChart(panelId, 'comment');
       return;
     }
@@ -1511,7 +1550,7 @@
     if (!st) return;
     document.getElementById('hsModalTitle').textContent = HS_TABS.find((t) => t.key === st.tab)?.label || '';
     document.getElementById('hsChartModal').classList.add('open');
-    hsDrawChart(document.getElementById('hsModalCanvas'), hsSeriesFor(panelId, st.tab));
+    hsDrawChart(document.getElementById('hsModalCanvas'), hsSeriesFor(panelId, st.tab), { zeroBased: st.tab !== 'follower' });
   }
   function hsCloseChartModal(e) {
     if (e && e.target !== document.getElementById('hsChartModal')) return;
@@ -1521,7 +1560,9 @@
   // 依存ライブラリなしの簡易折れ線グラフ(y===nullで線を分断できる)
   // Canvasの実解像度をCSS表示サイズ×devicePixelRatioに合わせて描画することで、
   // 画面幅に合わせて縮小表示された際に文字や線がぼやけて薄く見える問題を防ぐ
-  function hsDrawChart(canvas, series) {
+  // opts.zeroBased=false のときはY軸を0からではなく実際のデータ範囲でスケーリングする
+  // (フォロワー数のように絶対値が大きく変化量が小さい系列は、0基準だと変化が見えなくなるため)
+  function hsDrawChart(canvas, series, opts = {}) {
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth || 760;
@@ -1531,8 +1572,6 @@
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const padL = 46, padR = 14, padT = 20, padB = 24;
-    const plotW = w - padL - padR, plotH = h - padT - padB;
 
     const allPoints = series.flatMap((s) => s.points).filter((p) => p.y !== null && p.y !== undefined);
     if (!series.length || !allPoints.length) {
@@ -1540,14 +1579,40 @@
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('データがありません', w / 2, h / 2);
+      canvas._hsChart = null;
       return;
     }
+
+    const dataMinY = Math.min(...allPoints.map((p) => p.y));
+    const dataMaxY = Math.max(...allPoints.map((p) => p.y));
+    let minY, maxY;
+    if (opts.zeroBased === false) {
+      const range = dataMaxY - dataMinY;
+      const pad = range > 0 ? range * 0.25 : Math.max(1, dataMaxY * 0.02);
+      minY = Math.floor(dataMinY - pad);
+      maxY = Math.ceil(dataMaxY + pad);
+    } else {
+      minY = 0;
+      maxY = Math.max(10, dataMaxY) * 1.15;
+    }
+    if (maxY === minY) maxY = minY + 1;
+
+    // Y軸ラベルの最大文字幅から左余白を動的に決める(6桁を超える数値でラベルの先頭が
+    // 見切れてしまい、桁がおかしく見える問題への対策)
+    ctx.font = '12px sans-serif';
+    let maxLabelW = 0;
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round(minY + (maxY - minY) * (1 - i / 4));
+      maxLabelW = Math.max(maxLabelW, ctx.measureText(val.toLocaleString('ja-JP')).width);
+    }
+    const padL = Math.max(46, maxLabelW + 18), padR = 14, padT = 20, padB = 24;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+
     const xs = series.flatMap((s) => s.points.map((p) => p.x));
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const maxY = Math.max(10, ...allPoints.map((p) => p.y)) * 1.15;
 
     const xFor = (x) => padL + (maxX === minX ? plotW / 2 : ((x - minX) / (maxX - minX)) * plotW);
-    const yFor = (y) => padT + plotH - (y / maxY) * plotH;
+    const yFor = (y) => padT + plotH - ((y - minY) / (maxY - minY)) * plotH;
 
     // グリッド + Y軸ラベル
     ctx.strokeStyle = '#333';
@@ -1557,8 +1622,8 @@
     for (let i = 0; i <= 4; i++) {
       const y = padT + (plotH * i) / 4;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-      const val = Math.round(maxY * (1 - i / 4));
-      ctx.fillText(String(val), padL - 8, y + 4);
+      const val = Math.round(minY + (maxY - minY) * (1 - i / 4));
+      ctx.fillText(val.toLocaleString('ja-JP'), padL - 8, y + 4);
     }
 
     // 各系列を描画(y===nullで線を分断)
@@ -1594,10 +1659,47 @@
     ctx.fillText(hsFmtAxisDate(minX), padL, h - 6);
     ctx.textAlign = 'right';
     ctx.fillText(hsFmtAxisDate(maxX), w - padR, h - 6);
+
+    // マウスホバーで時刻・数値を確認できるようにする(canvasごとに初回のみイベント登録)
+    const allX = Array.from(new Set(xs)).sort((a, b) => a - b);
+    canvas._hsChart = { series, xFor, allX };
+    hsAttachHover(canvas);
   }
   function hsFmtAxisDate(ms) {
     const d = new Date(ms);
     return `${d.getMonth() + 1}/${d.getDate()} ${hsPad(d.getHours())}:${hsPad(d.getMinutes())}`;
+  }
+
+  // チャートcanvas共通のホバーツールチップ(時刻+各系列の数値を表示)
+  function hsAttachHover(canvas) {
+    if (canvas.dataset.hsHoverBound) return;
+    canvas.dataset.hsHoverBound = '1';
+    canvas.addEventListener('mousemove', (e) => {
+      const tip = document.getElementById('hsTooltip');
+      const meta = canvas._hsChart;
+      if (!tip) return;
+      if (!meta || !meta.allX.length) { tip.style.display = 'none'; return; }
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      let nearest = meta.allX[0], nearestDist = Infinity;
+      for (const x of meta.allX) {
+        const d = Math.abs(meta.xFor(x) - mx);
+        if (d < nearestDist) { nearestDist = d; nearest = x; }
+      }
+      const lines = meta.series.map((s) => {
+        const pt = s.points.find((p) => p.x === nearest);
+        const val = (pt && pt.y !== null && pt.y !== undefined) ? pt.y.toLocaleString('ja-JP') : '-';
+        return `<span style="color:${s.color}">●</span> ${s.label}: ${val}`;
+      }).join('<br>');
+      tip.innerHTML = `${hsFmtAxisDate(nearest)}<br>${lines}`;
+      tip.style.display = 'block';
+      tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 190) + 'px';
+      tip.style.top = Math.min(e.clientY + 14, window.innerHeight - 80) + 'px';
+    });
+    canvas.addEventListener('mouseleave', () => {
+      const tip = document.getElementById('hsTooltip');
+      if (tip) tip.style.display = 'none';
+    });
   }
 
   // ---------- 配信統計: バックアップ(手動・念のため) ----------
@@ -1626,6 +1728,28 @@
       hsBackupStatusEl().textContent = '✅ 保存しました';
     } catch (e) {
       hsBackupStatusEl().textContent = '保存に失敗しました: ' + e.message;
+    }
+  }
+
+  function hsCsvStatusEl() { return document.getElementById('hsCsvStatus'); }
+
+  async function hsExportCsv() {
+    try {
+      const res = await fetch('/api/overlay/stats/export.csv');
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nicolive_stats_${hsJstDateStr(Date.now())}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      hsCsvStatusEl().textContent = '✅ ダウンロードしました';
+    } catch (e) {
+      hsCsvStatusEl().textContent = 'ダウンロードに失敗しました: ' + e.message;
     }
   }
 
