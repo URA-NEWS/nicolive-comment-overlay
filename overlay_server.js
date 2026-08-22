@@ -40,8 +40,16 @@ const ROOT = __dirname;
 })();
 
 const PORT = process.env.PORT || 3941;
-const CONFIG_FILE = path.join(ROOT, 'overlay_config.json');
-const DEBUG_FILE = path.join(ROOT, 'debug_last.json');
+
+// Renderの有料プランでPersistent Diskを追加した場合、環境変数DATA_DIRに
+// そのマウントパス(例: /var/data)を設定すると、設定・コメント履歴(アイテム)・
+// 配信統計を再デプロイでも消えないディスク側に保存する。
+// 未設定時は従来通りアプリ本体と同じディレクトリに保存する(Render無料プランはここが再デプロイのたびに消える)。
+const DATA_DIR = (process.env.DATA_DIR && process.env.DATA_DIR.trim()) ? process.env.DATA_DIR.trim() : ROOT;
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
+
+const CONFIG_FILE = path.join(DATA_DIR, 'overlay_config.json');
+const DEBUG_FILE = path.join(ROOT, 'debug_last.json'); // デバッグ用の一時ファイルなので永続化は不要
 // curl.exeはWindows専用。本番(Render/Linux)ではcurlを使う
 const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl';
 
@@ -128,7 +136,7 @@ function detectItem(c) {
 }
 
 // ---------- アイテム履歴(永続保存) ----------
-const GIFT_LOG_FILE = path.join(ROOT, 'gift_log.json');
+const GIFT_LOG_FILE = path.join(DATA_DIR, 'gift_log.json');
 function loadGiftLog() {
   try { return JSON.parse(fs.readFileSync(GIFT_LOG_FILE, 'utf8')); } catch { return []; }
 }
@@ -559,7 +567,7 @@ setInterval(pollFollowerCount, 5000);
 // ============================================================
 // 配信統計(時間毎の閲覧数・配信毎のフォロワー数を記録)
 // ============================================================
-const STATS_FILE = path.join(ROOT, 'stats_history.json');
+const STATS_FILE = path.join(DATA_DIR, 'stats_history.json');
 const STATS_TICK_MS = 60 * 1000;              // 生存確認(配信中か)の間隔
 const STATS_SAMPLE_MS = 5 * 60 * 1000;        // 閲覧数サンプリング間隔(5分)
 const STATS_OFFLINE_GRACE_MS = 5 * 60 * 1000; // 両プラットフォームがこの時間非配信なら「配信終了」
@@ -1741,5 +1749,6 @@ server.listen(PORT, () => {
   console.log(` オーバーレイ: http://localhost:${PORT}/overlay-nico`);
   console.log(` ふわっちID: ${config.liveId || '(未設定)'}`);
   console.log(` KickスラッグG: ${config.kickSlug || '(未設定)'}`);
+  console.log(` データ保存先: ${DATA_DIR === ROOT ? 'アプリ本体と同じ場所(再デプロイで消えます)' : DATA_DIR + '(Persistent Disk)'}`);
   console.log(`==============================================`);
 });
