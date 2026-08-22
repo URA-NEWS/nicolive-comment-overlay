@@ -398,7 +398,7 @@ function rouletteState() {
 
 // ---------- ふわっちポーリング ----------
 async function pollFwComments() {
-  if (!config.liveId) { fwViewerCount = null; return; }
+  if (!config.liveId) { fwViewerCount = null; fwLiveNow = false; return; }
   try {
     const url = `https://api.whowatch.tv/lives/${config.liveId}?last_updated_at=${fwLastUpdated}`;
     const res = await fetch(url, {
@@ -411,8 +411,15 @@ async function pollFwComments() {
     if (!res.ok) return;
     const d = await res.json();
     try { fs.writeFileSync(DEBUG_FILE, JSON.stringify(d, null, 2), 'utf8'); } catch {}
+    // fwLiveNowは「今回の応答で配信中と確認できたか」を表す(統計の配信終了判定用)。
+    // fwViewerCountはオーバーレイ表示用に直近の値を保持し続ける(配信終了直後もチラつかせないため)
+    fwLiveNow = !!(d.live && Number.isFinite(Number(d.live.view_count)));
     if (d.live && Number.isFinite(Number(d.live.view_count))) {
       fwViewerCount = Number(d.live.view_count);
+    }
+    if (d.live) {
+      const t = d.live.title || d.live.name || d.live.live_title;
+      if (typeof t === 'string' && t) lastFwTitle = t;
     }
     if (Array.isArray(d.live_sent_items)) {
       for (const item of d.live_sent_items) {
@@ -452,10 +459,14 @@ let followerCount = null;
 let fwViewerCount = null;
 let kickFollowerCount = null;
 let kickViewerCount = null;
+let lastFwTitle = '';   // 配信統計での記録用(取得できた場合のみ)
+let lastKickTitle = '';
+let fwLiveNow = false;   // 直近のポーリングで「配信中」と確認できたか(配信終了の自動判定用)
+let kickLiveNow = false;
 
 // Kick: 閲覧数(公式API) + フォロワー数(v2/curl)
 async function pollKickStats() {
-  if (!config.kickSlug) { kickFollowerCount = null; kickViewerCount = null; return; }
+  if (!config.kickSlug) { kickFollowerCount = null; kickViewerCount = null; kickLiveNow = false; return; }
   const slug = config.kickSlug;
 
   // 閲覧数: 公式API v1
@@ -469,7 +480,10 @@ async function pollKickStats() {
         const d = await res.json();
         const ch = (Array.isArray(d.data) ? d.data[0] : d.data) || d;
         const v = Number(ch?.stream?.viewer_count);
+        kickLiveNow = !!ch?.stream?.is_live;
         kickViewerCount = ch?.stream?.is_live && Number.isFinite(v) ? v : null;
+        const t = ch?.stream?.stream_title || ch?.stream?.title;
+        if (typeof t === 'string' && t) lastKickTitle = t;
       }
     }
   } catch (e) {}
@@ -533,6 +547,158 @@ async function pollFollowerCount() {
 }
 pollFollowerCount();
 setInterval(pollFollowerCount, 5000);
+
+// ============================================================
+// 配信統計(時間毎の閲覧数・配信毎のフォロワー数を記録)
+// ============================================================
+const STATS_FILE = path.join(ROOT, 'stats_history.json');
+const STATS_TICK_MS = 60 * 1000;              // 生存確認(配信中か)の間隔
+const STATS_SAMPLE_MS = 5 * 60 * 1000;        // 閲覧数サンプリング間隔(5分)
+const STATS_OFFLINE_GRACE_MS = 5 * 60 * 1000; // 両プラットフォームがこの時間非配信なら「配信終了」
+const STATS_MAX_STREAMS = 300;                // 保持する配信記録の上限件数(古い順に削除)
+
+function loadStats() {
+  try {
+    const s = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+    if (!Array.isArray(s.streams)) s.streams = [];
+    return s;
+  } catch { return { streams: [] }; }
+}
+function saveStats() {
+  try { fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf8'); } catch {}
+}
+let stats = loadStats();
+
+// JST(UTC+9)基準の日付文字列(YYYY-MM-DD)。Render等サーバーのタイムゾーンに関わらず
+// 日本の配信者にとって自然な「配信日」の区切りになるよう明示的に変換する。
+function toJstDateStr(ms) {
+  return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+let currentStream = null;    // 進行中の配信レコード(stats.streamsの末尾要素への参照)
+let statsOfflineTicks = 0;
+
+// サーバー再起動/redeployで正常終了できなかった配信記録が残っていたら、その時点で確定させる
+(function recoverUnfinishedStream() {
+  const last = stats.streams[stats.streams.length - 1];
+  if (last && last.endedAt === null) {
+    const lastSample = last.samples[last.samples.length - 1];
+    last.endedAt = lastSample ? lastSample.t : last.startedAt;
+    if (last.fwFollowerEnd === null) last.fwFollowerEnd = last.fwFollowerStart;
+    if (last.kickFollowerEnd === null) last.kickFollowerEnd = last.kickFollowerStart;
+    last.note = 'サーバー再起動により自動終了';
+    saveStats();
+  }
+})();
+
+function newStreamRecord() {
+  return {
+    id: `s${Date.now()}`,
+    startedAt: Date.now(),
+    endedAt: null,
+    fwLiveId: config.liveId || '',
+    kickSlug: config.kickSlug || '',
+    fwTitle: lastFwTitle || '',
+    kickTitle: lastKickTitle || '',
+    fwFollowerStart: followerCount,
+    kickFollowerStart: kickFollowerCount,
+    fwFollowerEnd: null,
+    kickFollowerEnd: null,
+    peakFwViewers: null,
+    peakKickViewers: null,
+    sumFwViewers: 0, countFwViewers: 0,
+    sumKickViewers: 0, countKickViewers: 0,
+    samples: [], // {t, fw, kick} を5分おきに追加
+  };
+}
+
+function statsTick() {
+  // 表示用のfwViewerCount/kickViewerCountは配信終了直後も直近値を保持することがあるため、
+  // 「今回のポーリングで実際に生存確認できたか」を表すfwLiveNow/kickLiveNowで判定する
+  const isLive = fwLiveNow || kickLiveNow;
+  if (isLive) {
+    statsOfflineTicks = 0;
+    if (!currentStream) {
+      currentStream = newStreamRecord();
+      stats.streams.push(currentStream);
+      if (stats.streams.length > STATS_MAX_STREAMS) stats.streams = stats.streams.slice(-STATS_MAX_STREAMS);
+      console.log(`[統計] 配信記録を開始: ${currentStream.id}`);
+      saveStats();
+    } else {
+      // タイトルは配信開始直後に取得できないことがあるため随時更新
+      if (lastFwTitle) currentStream.fwTitle = lastFwTitle;
+      if (lastKickTitle) currentStream.kickTitle = lastKickTitle;
+    }
+  } else if (currentStream) {
+    statsOfflineTicks++;
+    if (statsOfflineTicks * STATS_TICK_MS >= STATS_OFFLINE_GRACE_MS) {
+      currentStream.endedAt = Date.now();
+      currentStream.fwFollowerEnd = followerCount;
+      currentStream.kickFollowerEnd = kickFollowerCount;
+      console.log(`[統計] 配信記録を終了: ${currentStream.id}`);
+      currentStream = null;
+      statsOfflineTicks = 0;
+      saveStats();
+    }
+  }
+}
+setInterval(statsTick, STATS_TICK_MS);
+statsTick();
+
+function statsSampleTick() {
+  if (!currentStream) return;
+  // fwLiveNow/kickLiveNowで実際に生存確認できている値だけを集計対象にする
+  // (配信終了直後の猶予期間中は表示用キャッシュ値が古いまま残っている場合があるため)
+  const sampleFw = fwLiveNow ? fwViewerCount : null;
+  const sampleKick = kickLiveNow ? kickViewerCount : null;
+  currentStream.samples.push({ t: Date.now(), fw: sampleFw, kick: sampleKick });
+  if (currentStream.samples.length > 500) currentStream.samples = currentStream.samples.slice(-500);
+  if (sampleFw !== null) {
+    currentStream.sumFwViewers += sampleFw;
+    currentStream.countFwViewers += 1;
+    if (currentStream.peakFwViewers === null || sampleFw > currentStream.peakFwViewers) currentStream.peakFwViewers = sampleFw;
+  }
+  if (sampleKick !== null) {
+    currentStream.sumKickViewers += sampleKick;
+    currentStream.countKickViewers += 1;
+    if (currentStream.peakKickViewers === null || sampleKick > currentStream.peakKickViewers) currentStream.peakKickViewers = sampleKick;
+  }
+  // 途中終了時の保険として、フォロワー数の最新値を随時「終了時点の値」として更新しておく
+  currentStream.fwFollowerEnd = followerCount;
+  currentStream.kickFollowerEnd = kickFollowerCount;
+  saveStats();
+}
+setInterval(statsSampleTick, STATS_SAMPLE_MS);
+
+function summarizeStream(s, includeSamples) {
+  const avgFw = s.countFwViewers ? Math.round(s.sumFwViewers / s.countFwViewers) : null;
+  const avgKick = s.countKickViewers ? Math.round(s.sumKickViewers / s.countKickViewers) : null;
+  const out = {
+    id: s.id,
+    startedAt: s.startedAt,
+    endedAt: s.endedAt,
+    live: s.endedAt === null,
+    date: toJstDateStr(s.startedAt),
+    fwLiveId: s.fwLiveId,
+    kickSlug: s.kickSlug,
+    fwTitle: s.fwTitle,
+    kickTitle: s.kickTitle,
+    fwFollowerStart: s.fwFollowerStart,
+    fwFollowerEnd: s.fwFollowerEnd,
+    kickFollowerStart: s.kickFollowerStart,
+    kickFollowerEnd: s.kickFollowerEnd,
+    fwFollowerGain: (s.fwFollowerStart != null && s.fwFollowerEnd != null) ? (s.fwFollowerEnd - s.fwFollowerStart) : null,
+    kickFollowerGain: (s.kickFollowerStart != null && s.kickFollowerEnd != null) ? (s.kickFollowerEnd - s.kickFollowerStart) : null,
+    peakFwViewers: s.peakFwViewers,
+    peakKickViewers: s.peakKickViewers,
+    avgFwViewers: avgFw,
+    avgKickViewers: avgKick,
+    durationMs: (s.endedAt || Date.now()) - s.startedAt,
+    note: s.note || '',
+  };
+  if (includeSamples) out.samples = s.samples;
+  return out;
+}
 
 // ---------- ギフト受信(ユーザースクリプト) ----------
 function handleIncomingGift(msg) {
@@ -1107,6 +1273,12 @@ check();
       survey: surveyState(),
       quiz: quizState(),
       roulette: rouletteState(),
+      statsRecording: currentStream ? {
+        active: true,
+        startedAt: currentStream.startedAt,
+        fwTitle: currentStream.fwTitle,
+        kickTitle: currentStream.kickTitle,
+      } : { active: false },
       port: PORT,
     }));
     return;
@@ -1294,6 +1466,53 @@ check();
   if (url.pathname === '/api/overlay/giftlog' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ gifts: giftLog.slice().reverse() })); // 新着順
+    return;
+  }
+
+  // ---- 配信統計: 配信一覧(カレンダー・期間指定グラフ用) ----
+  // from/to は YYYY-MM-DD (JST基準・両端含む)。full=1 で閲覧数の時系列サンプルも含める
+  if (url.pathname === '/api/overlay/stats/streams' && req.method === 'GET') {
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const full = url.searchParams.get('full') === '1';
+    let list = stats.streams;
+    if (from) list = list.filter((s) => toJstDateStr(s.startedAt) >= from);
+    if (to) list = list.filter((s) => toJstDateStr(s.startedAt) <= to);
+    const out = list.slice().reverse().map((s) => summarizeStream(s, full)); // 新しい順
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ streams: out }));
+    return;
+  }
+
+  // ---- 配信統計: ローカルバックアップ用エクスポート(内部形式そのまま・復元との往復に対応) ----
+  if (url.pathname === '/api/overlay/stats/export' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ streams: stats.streams, exportedAt: Date.now() }));
+    return;
+  }
+
+  // ---- 配信統計: ローカルバックアップからの復元(Renderの無料プランは再デプロイで消えるための救済) ----
+  if (url.pathname === '/api/overlay/stats/restore' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!Array.isArray(body.streams)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'streamsが配列ではありません' }));
+      return;
+    }
+    const byId = new Map();
+    for (const s of stats.streams) byId.set(s.id, s);
+    let restored = 0;
+    for (const s of body.streams) {
+      if (!s || typeof s.id !== 'string' || typeof s.startedAt !== 'number') continue;
+      if (currentStream && s.id === currentStream.id) continue; // 進行中の記録は上書きしない
+      byId.set(s.id, s);
+      restored++;
+    }
+    stats.streams = Array.from(byId.values()).sort((a, b) => a.startedAt - b.startedAt);
+    if (stats.streams.length > STATS_MAX_STREAMS) stats.streams = stats.streams.slice(-STATS_MAX_STREAMS);
+    saveStats();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, restored, total: stats.streams.length }));
     return;
   }
 
