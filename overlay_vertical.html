@@ -1542,7 +1542,7 @@
   }
 
   // コメント一覧の反対側に表示する(list.pos-leftなら右側、list.pos-rightなら左側)
-  function renderSchedule(scheduleByWeek, style, verticalPos, enabled) {
+  function renderSchedule(scheduleByWeek, style, verticalPos, enabled, displayWeek) {
     const wrap = document.getElementById('hsSchedWrap');
     const panel = document.getElementById('hsSchedPanel');
     const rowsEl = document.getElementById('hsSchedRows');
@@ -1567,7 +1567,10 @@
     panel.style.transformOrigin = sideCls === 'hsSchedOnLeft' ? 'left center' : 'right center';
     panel.style.transform = `scale(${(style.scale !== undefined ? style.scale : 100) / 100})`;
 
-    const monday = hsSchedMonday();
+    // 通常は実際の今週。displayWeekが指定されていれば、その週を強制的に表示する(下書きプレビュー用)
+    const monday = (displayWeek && /^\d{4}-\d{2}-\d{2}$/.test(displayWeek))
+      ? (() => { const [y, m, d] = displayWeek.split('-').map(Number); return new Date(y, m - 1, d); })()
+      : hsSchedMonday();
     const weekKey = hsSchedWeekKey(monday);
     const schedule = scheduleByWeek[weekKey] || {};
     const todayStr = new Date().toDateString();
@@ -1630,7 +1633,7 @@
       rb.classList.remove('pos-left', 'pos-right');
       rb.classList.add(posCls);
       updateStats(data);
-      renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.verticalPos, data.scheduleEnabled);
+      renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.verticalPos, data.scheduleEnabled, data.scheduleDisplayWeek);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--bg-op', (data.bgOpacity / 100).toFixed(2));
       }
