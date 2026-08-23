@@ -1575,12 +1575,16 @@
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
   }
 
-  function renderSchedule(schedule, style) {
+  function renderSchedule(schedule, style, enabled) {
     const wrap = document.getElementById('hsSchedWrap');
     const panel = document.getElementById('hsSchedPanel');
     const rowsEl = document.getElementById('hsSchedRows');
     const headingEl = document.getElementById('hsSchedHeading');
     if (!wrap || !schedule || !style) return;
+    if (enabled === false) {
+      wrap.classList.remove('in');
+      return;
+    }
 
     panel.style.color = style.color || '#ffffff';
     panel.style.fontSize = (style.fontSize || 18) + 'px';
@@ -1635,7 +1639,7 @@
         DURATION = data.speed;
       }
       updateStats(data);
-      renderSchedule(data.schedule, data.scheduleStyle);
+      renderSchedule(data.schedule, data.scheduleStyle, data.scheduleEnabled);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--c-op', (0.45 + (data.bgOpacity / 100) * 0.55).toFixed(2));
       }
