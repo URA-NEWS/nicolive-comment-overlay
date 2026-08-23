@@ -103,6 +103,8 @@ function loadConfig() {
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
     if (typeof c.scheduleEnabled !== 'boolean') c.scheduleEnabled = true;
+    // ''(または不正値) = 自動(実際の今週を表示)。"YYYY-MM-DD"(月曜日付) = その週を強制的に表示(下書きプレビュー用)
+    if (typeof c.scheduleDisplayWeek !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(c.scheduleDisplayWeek)) c.scheduleDisplayWeek = '';
     if (typeof c.scheduleByWeek !== 'object' || c.scheduleByWeek === null) c.scheduleByWeek = {};
     // 旧形式(曜日テンプレートを全週共通で使い回す)からの移行: 既存の内容は「今週」の分として引き継ぐ
     if (typeof c.schedule === 'object' && c.schedule !== null) {
@@ -124,6 +126,7 @@ function loadConfig() {
     return {
       liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
       scheduleEnabled: true,
+      scheduleDisplayWeek: '',
       scheduleByWeek: {},
       scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420, scale: 100 },
     };
@@ -1373,6 +1376,7 @@ check();
       quiz: quizState(),
       roulette: rouletteState(),
       scheduleEnabled: config.scheduleEnabled,
+      scheduleDisplayWeek: config.scheduleDisplayWeek,
       scheduleByWeek: config.scheduleByWeek,
       scheduleStyle: config.scheduleStyle,
       statsRecording: {
@@ -1478,6 +1482,13 @@ check();
 
     // ---- 配信スケジュール(週ごとの配信時間・内容) ----
     if (body.scheduleEnabled !== undefined) { config.scheduleEnabled = !!body.scheduleEnabled; changed = true; }
+    if (body.scheduleDisplayWeek !== undefined) {
+      const w = body.scheduleDisplayWeek;
+      if (w === '' || (typeof w === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(w))) {
+        config.scheduleDisplayWeek = w;
+        changed = true;
+      }
+    }
     if (
       body.schedule !== undefined && typeof body.schedule === 'object' && body.schedule !== null &&
       typeof body.scheduleWeek === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.scheduleWeek)
