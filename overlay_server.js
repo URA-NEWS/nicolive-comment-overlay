@@ -58,6 +58,9 @@ const KICK_CLIENT_ID = process.env.KICK_CLIENT_ID || '';
 const KICK_CLIENT_SECRET = process.env.KICK_CLIENT_SECRET || '';
 
 // ---------- config ----------
+// 配信スケジュールは「曜日ごとに毎週使い回すテンプレート」として保持する
+// (週によって内容を変えたい場合も、そのつど上書き保存すれば反映される)
+const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 function loadConfig() {
   try {
     const c = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -79,9 +82,26 @@ function loadConfig() {
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
+    if (typeof c.schedule !== 'object' || c.schedule === null) c.schedule = {};
+    for (const key of SCHEDULE_DAYS) {
+      const d = c.schedule[key];
+      c.schedule[key] = {
+        time: (d && typeof d.time === 'string') ? d.time.slice(0, 40) : '',
+        text: (d && typeof d.text === 'string') ? d.text.slice(0, 100) : '',
+      };
+    }
+    if (typeof c.scheduleStyle !== 'object' || c.scheduleStyle === null) c.scheduleStyle = {};
+    if (typeof c.scheduleStyle.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c.scheduleStyle.color)) c.scheduleStyle.color = '#ffffff';
+    if (typeof c.scheduleStyle.fontSize !== 'number' || c.scheduleStyle.fontSize < 10 || c.scheduleStyle.fontSize > 60) c.scheduleStyle.fontSize = 18;
+    if (typeof c.scheduleStyle.opacity !== 'number' || c.scheduleStyle.opacity < 0 || c.scheduleStyle.opacity > 100) c.scheduleStyle.opacity = 70;
+    if (typeof c.scheduleStyle.width !== 'number' || c.scheduleStyle.width < 120 || c.scheduleStyle.width > 2000) c.scheduleStyle.width = 420;
     return c;
   } catch {
-    return { liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '' };
+    return {
+      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
+      schedule: Object.fromEntries(SCHEDULE_DAYS.map((k) => [k, { time: '', text: '' }])),
+      scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420 },
+    };
   }
 }
 function saveConfig(cfg) {
@@ -1327,6 +1347,8 @@ check();
       survey: surveyState(),
       quiz: quizState(),
       roulette: rouletteState(),
+      schedule: config.schedule,
+      scheduleStyle: config.scheduleStyle,
       statsRecording: {
         active: !!currentStream,
         paused: statsPaused,
@@ -1426,6 +1448,39 @@ check();
         config.displayMode = body.displayMode;
         changed = true;
       }
+    }
+
+    // ---- 配信スケジュール(曜日ごとの配信時間・内容) ----
+    if (body.schedule !== undefined && typeof body.schedule === 'object' && body.schedule !== null) {
+      for (const key of SCHEDULE_DAYS) {
+        const d = body.schedule[key];
+        if (d && typeof d === 'object') {
+          config.schedule[key] = {
+            time: typeof d.time === 'string' ? d.time.slice(0, 40) : config.schedule[key].time,
+            text: typeof d.text === 'string' ? d.text.slice(0, 100) : config.schedule[key].text,
+          };
+        }
+      }
+      changed = true;
+    }
+
+    // ---- 配信スケジュール表示の見た目 ----
+    if (body.scheduleStyle !== undefined && typeof body.scheduleStyle === 'object' && body.scheduleStyle !== null) {
+      const st = body.scheduleStyle;
+      if (typeof st.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(st.color)) config.scheduleStyle.color = st.color;
+      if (st.fontSize !== undefined) {
+        const v = Number(st.fontSize);
+        if (!isNaN(v) && v >= 10 && v <= 60) config.scheduleStyle.fontSize = v;
+      }
+      if (st.opacity !== undefined) {
+        const v = Number(st.opacity);
+        if (!isNaN(v) && v >= 0 && v <= 100) config.scheduleStyle.opacity = v;
+      }
+      if (st.width !== undefined) {
+        const v = Number(st.width);
+        if (!isNaN(v) && v >= 120 && v <= 2000) config.scheduleStyle.width = v;
+      }
+      changed = true;
     }
 
     if (body.kickChatroomId !== undefined) {
