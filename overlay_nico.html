@@ -770,20 +770,81 @@
   }
   #hsSchedWrap.in { transform: translate(0, -50%); }
   #hsSchedPanel {
-    border-radius: 10px 0 0 10px;
-    padding: 14px 18px;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+    position: relative;
+    border-radius: 18px 0 0 18px;
+    padding: 20px 26px 20px 30px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
     font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    overflow: hidden;
+    backdrop-filter: blur(6px);
   }
-  #hsSchedPanel .hsSchedHeading { font-weight: 800; margin-bottom: 8px; opacity: 0.85; letter-spacing: 0.05em; font-size: 0.8em; }
-  .hsSchedRow { display: flex; align-items: baseline; gap: 10px; padding: 5px 2px; border-bottom: 1px solid rgba(255,255,255,0.12); }
-  .hsSchedRow:last-child { border-bottom: none; }
-  .hsSchedRow.hsSchedToday { background: rgba(255,255,255,0.12); border-radius: 4px; padding-left: 6px; margin-left: -6px; }
-  .hsSchedRow .hsSchedDt { opacity: 0.7; font-size: 0.75em; min-width: 1.8em; }
-  .hsSchedRow .hsSchedWd { font-weight: 800; min-width: 2.4em; }
-  .hsSchedRow .hsSchedTime { font-weight: 700; white-space: nowrap; }
-  .hsSchedRow .hsSchedText { opacity: 0.95; }
-  .hsSchedRow .hsSchedOff { opacity: 0.55; font-style: italic; }
+  #hsSchedPanel::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, currentColor, transparent 90%);
+  }
+  .hsSchedKicker {
+    font-size: 0.6em;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    opacity: 0.4;
+    margin-bottom: 3px;
+  }
+  #hsSchedPanel .hsSchedHeading {
+    font-weight: 800;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    font-size: 0.88em;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+  }
+  .hsSchedRow { display: flex; align-items: center; gap: 12px; padding: 8px 2px; position: relative; }
+  .hsSchedRow:not(:last-child)::after {
+    content: '';
+    position: absolute; left: 2px; right: 2px; bottom: 0;
+    border-bottom: 1px dashed rgba(255,255,255,0.14);
+  }
+  .hsSchedRow.hsSchedToday {
+    background: rgba(255,255,255,0.08);
+    border-radius: 10px;
+    margin: 0 -8px;
+    padding: 8px 10px;
+  }
+  .hsSchedRow.hsSchedToday::after { border-color: transparent; }
+  .hsSchedRow .hsSchedDt { opacity: 0.5; font-size: 0.66em; min-width: 1.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  .hsSchedRow .hsSchedWd {
+    font-weight: 800;
+    font-size: 0.8em;
+    width: 1.9em;
+    height: 1.9em;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+  }
+  .hsSchedRow.hsSchedToday .hsSchedWd {
+    background: rgba(255,255,255,0.22);
+    border-color: currentColor;
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.06);
+  }
+  .hsSchedRow .hsSchedTime {
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82em;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.12);
+    letter-spacing: 0.02em;
+  }
+  .hsSchedRow.hsSchedToday .hsSchedTime { background: rgba(255,255,255,0.24); border-color: currentColor; }
+  .hsSchedRow .hsSchedText { opacity: 0.92; font-size: 0.95em; }
+  .hsSchedRow .hsSchedOff { opacity: 0.35; font-style: italic; font-size: 0.85em; }
 </style>
 </head>
 <body>
@@ -844,6 +905,7 @@
   </div>
 </div>
 <div id="hsSchedWrap"><div id="hsSchedPanel">
+  <div class="hsSchedKicker">SCHEDULE</div>
   <div class="hsSchedHeading" id="hsSchedHeading"></div>
   <div id="hsSchedRows"></div>
 </div></div>
@@ -1590,6 +1652,8 @@
     panel.style.fontSize = (style.fontSize || 18) + 'px';
     panel.style.width = (style.width || 420) + 'px';
     panel.style.background = `rgba(0,0,0,${((style.opacity !== undefined ? style.opacity : 70) / 100).toFixed(2)})`;
+    panel.style.transformOrigin = 'right center';
+    panel.style.transform = `scale(${(style.scale !== undefined ? style.scale : 100) / 100})`;
 
     const monday = hsSchedMonday();
     const todayStr = new Date().toDateString();
