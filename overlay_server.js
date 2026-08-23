@@ -96,13 +96,14 @@ function loadConfig() {
     if (typeof c.scheduleStyle.fontSize !== 'number' || c.scheduleStyle.fontSize < 10 || c.scheduleStyle.fontSize > 60) c.scheduleStyle.fontSize = 18;
     if (typeof c.scheduleStyle.opacity !== 'number' || c.scheduleStyle.opacity < 0 || c.scheduleStyle.opacity > 100) c.scheduleStyle.opacity = 70;
     if (typeof c.scheduleStyle.width !== 'number' || c.scheduleStyle.width < 120 || c.scheduleStyle.width > 2000) c.scheduleStyle.width = 420;
+    if (typeof c.scheduleStyle.scale !== 'number' || c.scheduleStyle.scale < 50 || c.scheduleStyle.scale > 300) c.scheduleStyle.scale = 100;
     return c;
   } catch {
     return {
       liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
       scheduleEnabled: true,
       schedule: Object.fromEntries(SCHEDULE_DAYS.map((k) => [k, { time: '', text: '' }])),
-      scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420 },
+      scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420, scale: 100 },
     };
   }
 }
@@ -1256,14 +1257,14 @@ const server = http.createServer(async (req, res) => {
 
   if ((url.pathname === '/dock' || url.pathname === '/') && req.method === 'GET') {
     const html = fs.readFileSync(path.join(ROOT, 'overlay_dock.html'), 'utf8');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(html);
     return;
   }
 
   if ((url.pathname === '/overlay-nico' || url.pathname === '/overlay') && req.method === 'GET') {
     const html = fs.readFileSync(path.join(ROOT, 'overlay_nico.html'), 'utf8');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(html);
     return;
   }
@@ -1271,7 +1272,7 @@ const server = http.createServer(async (req, res) => {
   // ---- 縦型オーバーレイ ----
   if (url.pathname === '/overlay-vertical' && req.method === 'GET') {
     const html = fs.readFileSync(path.join(ROOT, 'overlay_vertical.html'), 'utf8');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(html);
     return;
   }
@@ -1306,13 +1307,13 @@ check();
 <\/script>
 </body>
 </html>`;
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(html);
     return;
   }
 
   if (url.pathname === '/api/overlay/status' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({
       liveId: config.liveId,
       speed: config.speed,
@@ -1483,6 +1484,10 @@ check();
       if (st.width !== undefined) {
         const v = Number(st.width);
         if (!isNaN(v) && v >= 120 && v <= 2000) config.scheduleStyle.width = v;
+      }
+      if (st.scale !== undefined) {
+        const v = Number(st.scale);
+        if (!isNaN(v) && v >= 50 && v <= 300) config.scheduleStyle.scale = v;
       }
       changed = true;
     }
