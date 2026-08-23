@@ -855,7 +855,7 @@
     letter-spacing: 0.02em;
   }
   .hsSchedRow.hsSchedToday .hsSchedTime { background: rgba(255,255,255,0.24); border-color: currentColor; }
-  .hsSchedRow .hsSchedText { opacity: 0.92; font-size: 0.95em; }
+  .hsSchedRow .hsSchedText { opacity: 0.92; font-size: 0.95em; font-weight: 700; }
   .hsSchedRow.hsSchedEmpty { opacity: 0.4; }
 </style>
 </head>
@@ -1649,18 +1649,24 @@
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
   }
 
-  function renderSchedule(schedule, style, enabled) {
+  function hsSchedWeekKey(monday) {
+    const mm = String(monday.getMonth() + 1).padStart(2, '0');
+    const dd = String(monday.getDate()).padStart(2, '0');
+    return `${monday.getFullYear()}-${mm}-${dd}`;
+  }
+
+  function renderSchedule(scheduleByWeek, style, enabled) {
     const wrap = document.getElementById('hsSchedWrap');
     const panel = document.getElementById('hsSchedPanel');
     const rowsEl = document.getElementById('hsSchedRows');
     const headingEl = document.getElementById('hsSchedHeading');
-    if (!wrap || !schedule || !style) return;
+    if (!wrap || !scheduleByWeek || !style) return;
     if (enabled === false) {
       wrap.classList.remove('in');
       return;
     }
 
-    panel.style.color = style.color || '#ffffff';
+    panel.style.color = '#ffffff';
     panel.style.fontSize = (style.fontSize || 18) + 'px';
     panel.style.width = (style.width || 420) + 'px';
     panel.style.background = `rgba(0,0,0,${((style.opacity !== undefined ? style.opacity : 70) / 100).toFixed(2)})`;
@@ -1668,6 +1674,8 @@
     panel.style.transform = `scale(${(style.scale !== undefined ? style.scale : 100) / 100})`;
 
     const monday = hsSchedMonday();
+    const weekKey = hsSchedWeekKey(monday);
+    const schedule = scheduleByWeek[weekKey] || {};
     const todayStr = new Date().toDateString();
     headingEl.textContent = `${monday.getMonth() + 1}月の配信スケジュール`;
 
@@ -1676,15 +1684,16 @@
     HS_SCHED_DAYS.forEach((key, i) => {
       const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
       const isToday = d.toDateString() === todayStr;
-      const entry = schedule[key] || { time: '', text: '' };
+      const entry = schedule[key] || { time: '', text: '', color: '' };
       const hasContent = !!(entry.time || entry.text);
       if (hasContent) hasAny = true;
       const timeHtml = entry.time ? `<span class="hsSchedTime">${hsSchedEscapeHtml(entry.time)}</span>` : '';
+      const textColor = entry.color ? ` style="color:${hsSchedEscapeHtml(entry.color)}"` : '';
       const textHtml = hasContent
-        ? `<span class="hsSchedText">${hsSchedEscapeHtml(entry.text)}</span>`
+        ? `<span class="hsSchedText"${textColor}>${hsSchedEscapeHtml(entry.text)}</span>`
         : '';
       html += `<div class="hsSchedRow${isToday ? ' hsSchedToday' : ''}${hasContent ? '' : ' hsSchedEmpty'}">
-        <span class="hsSchedDt">${d.getMonth() + 1}/${d.getDate()}</span>
+        <span class="hsSchedDt">${d.getDate()}</span>
         <span class="hsSchedWd">${HS_SCHED_LABEL[key]}</span>
         ${timeHtml}
         ${textHtml}
@@ -1699,7 +1708,7 @@
     // 中身は常に最新化するが、既に表示中ならスライドインは再生しない
     // (配信中にスケジュールや見た目を保存するたびに毎回スライドし直すと邪魔なため、
     //  非表示→表示に切り替わった時だけスライドインする)
-    hsSchedSignature = JSON.stringify({ schedule, style });
+    hsSchedSignature = JSON.stringify({ schedule, style, weekKey });
     if (!wrap.classList.contains('in')) {
       requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('in')));
     }
@@ -1714,7 +1723,7 @@
         DURATION = data.speed;
       }
       updateStats(data);
-      renderSchedule(data.schedule, data.scheduleStyle, data.scheduleEnabled);
+      renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.scheduleEnabled);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--c-op', (0.45 + (data.bgOpacity / 100) * 0.55).toFixed(2));
       }
