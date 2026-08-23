@@ -449,14 +449,20 @@
     <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
     <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
     <button class="small" onclick="hsSchedWeekShift(1)">翌週 ▶</button>
+    <span id="hsSchedPinnedBadge" style="display:none;font-size:11px;font-weight:700;color:#000;background:#ffb300;border-radius:4px;padding:2px 8px">オーバーレイ表示中</span>
   </div>
-  <div class="hint" style="margin-bottom:10px">週を切り替えてから保存すると、その週だけの内容として登録されます(他の週には影響しません)。オーバーレイには自動で「その時点の今週分」が表示されます。</div>
+  <div class="hint" style="margin-bottom:10px">週を切り替えてから保存すると、その週だけの内容として登録されます(他の週には影響しません)。オーバーレイには通常「自動でその時点の今週分」が表示されますが、下のボタンで今見ている週を強制的にオーバーレイへ表示することもできます(公開前の下書き確認や、先に翌週分を表示したい場合に使用)。</div>
 
   <div id="hsSchedRows"></div>
 
   <div class="speed-row" style="margin-top:4px">
     <button class="small" onclick="hsSaveSchedule()">スケジュールを保存</button>
     <span id="hsSchedStatus" class="hint" style="margin:0"></span>
+  </div>
+  <div class="speed-row" style="margin-top:4px">
+    <button class="small" onclick="hsPinDisplayWeek()">この週をオーバーレイに表示する</button>
+    <button class="small" onclick="hsUnpinDisplayWeek()">自動に戻す(今週を表示)</button>
+    <span id="hsSchedDisplayStatus" class="hint" style="margin:0"></span>
   </div>
 </div>
 
@@ -679,6 +685,11 @@
         displayModeInitialized = true;
       }
 
+      if (data.scheduleDisplayWeek !== undefined) {
+        hsSchedDisplayWeek = data.scheduleDisplayWeek || '';
+        hsUpdatePinnedBadge();
+      }
+
       if (!scheduleInitialized && data.scheduleByWeek && data.scheduleStyle) {
         hsSchedByWeek = data.scheduleByWeek;
         hsRenderSchedRows();
@@ -702,6 +713,7 @@
   const HS_SCHED_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const HS_SCHED_LABEL = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土', sun: '日' };
   let hsSchedByWeek = {}; // サーバーから取得した「週(月曜日付)ごと」のスケジュール全体
+  let hsSchedDisplayWeek = ''; // ''=自動(実際の今週) / "YYYY-MM-DD"=その週を強制的にオーバーレイへ表示中
   const HS_SCHED_EMPTY_DAY = { time: '', text: '', color: '' };
 
   // 「オフセット週の月曜日」を求める(0=今週, 1=翌週, -1=先週 ...)
@@ -747,6 +759,56 @@
           </label>
         </div>`;
     }).join('');
+    hsUpdatePinnedBadge();
+  }
+
+  function hsUpdatePinnedBadge() {
+    const badge = document.getElementById('hsSchedPinnedBadge');
+    if (!badge) return;
+    if (hsSchedDisplayWeek && hsSchedDisplayWeek === hsCurrentWeekKey()) {
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  async function hsPinDisplayWeek() {
+    const statusEl = document.getElementById('hsSchedDisplayStatus');
+    const weekKey = hsCurrentWeekKey();
+    const schedule = hsCollectScheduleFromInputs(); // 今見えている内容もあわせて保存してから表示を切り替える
+    statusEl.textContent = '設定中...';
+    try {
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleWeek: weekKey, schedule, scheduleDisplayWeek: weekKey }),
+      });
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+      hsSchedByWeek[weekKey] = schedule;
+      hsSchedDisplayWeek = weekKey;
+      hsUpdatePinnedBadge();
+      statusEl.textContent = '✅ この週をオーバーレイに表示しています(内容も保存されました)';
+    } catch (e) {
+      statusEl.textContent = '設定に失敗しました: ' + e.message;
+    }
+  }
+
+  async function hsUnpinDisplayWeek() {
+    const statusEl = document.getElementById('hsSchedDisplayStatus');
+    statusEl.textContent = '設定中...';
+    try {
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleDisplayWeek: '' }),
+      });
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+      hsSchedDisplayWeek = '';
+      hsUpdatePinnedBadge();
+      statusEl.textContent = '✅ 自動表示(今週分)に戻しました';
+    } catch (e) {
+      statusEl.textContent = '設定に失敗しました: ' + e.message;
+    }
   }
 
   function hsSchedWeekShift(delta) {
