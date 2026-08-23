@@ -58,9 +58,29 @@ const KICK_CLIENT_ID = process.env.KICK_CLIENT_ID || '';
 const KICK_CLIENT_SECRET = process.env.KICK_CLIENT_SECRET || '';
 
 // ---------- config ----------
-// 配信スケジュールは「曜日ごとに毎週使い回すテンプレート」として保持する
-// (週によって内容を変えたい場合も、そのつど上書き保存すれば反映される)
+// 配信スケジュールは「週(月曜日付=YYYY-MM-DD)ごと」に内容を保持する。
+// 週を切り替えて登録すればその週だけの内容として保存され、他の週には影響しない。
 const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+function mondayISO(date) {
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const m = new Date(date.getFullYear(), date.getMonth(), date.getDate() + diff);
+  const mm = String(m.getMonth() + 1).padStart(2, '0');
+  const dd = String(m.getDate()).padStart(2, '0');
+  return `${m.getFullYear()}-${mm}-${dd}`;
+}
+function sanitizeWeekMap(src) {
+  const out = {};
+  for (const key of SCHEDULE_DAYS) {
+    const d = src && src[key];
+    out[key] = {
+      time: (d && typeof d.time === 'string') ? d.time.slice(0, 40) : '',
+      text: (d && typeof d.text === 'string') ? d.text.slice(0, 100) : '',
+      color: (d && typeof d.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(d.color)) ? d.color : '',
+    };
+  }
+  return out;
+}
 function loadConfig() {
   try {
     const c = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -83,13 +103,15 @@ function loadConfig() {
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
     if (typeof c.scheduleEnabled !== 'boolean') c.scheduleEnabled = true;
-    if (typeof c.schedule !== 'object' || c.schedule === null) c.schedule = {};
-    for (const key of SCHEDULE_DAYS) {
-      const d = c.schedule[key];
-      c.schedule[key] = {
-        time: (d && typeof d.time === 'string') ? d.time.slice(0, 40) : '',
-        text: (d && typeof d.text === 'string') ? d.text.slice(0, 100) : '',
-      };
+    if (typeof c.scheduleByWeek !== 'object' || c.scheduleByWeek === null) c.scheduleByWeek = {};
+    // 旧形式(曜日テンプレートを全週共通で使い回す)からの移行: 既存の内容は「今週」の分として引き継ぐ
+    if (typeof c.schedule === 'object' && c.schedule !== null) {
+      const thisWeek = mondayISO(new Date());
+      if (!c.scheduleByWeek[thisWeek]) c.scheduleByWeek[thisWeek] = sanitizeWeekMap(c.schedule);
+      delete c.schedule;
+    }
+    for (const wk of Object.keys(c.scheduleByWeek)) {
+      c.scheduleByWeek[wk] = sanitizeWeekMap(c.scheduleByWeek[wk]);
     }
     if (typeof c.scheduleStyle !== 'object' || c.scheduleStyle === null) c.scheduleStyle = {};
     if (typeof c.scheduleStyle.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c.scheduleStyle.color)) c.scheduleStyle.color = '#ffffff';
@@ -102,7 +124,7 @@ function loadConfig() {
     return {
       liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
       scheduleEnabled: true,
-      schedule: Object.fromEntries(SCHEDULE_DAYS.map((k) => [k, { time: '', text: '' }])),
+      scheduleByWeek: {},
       scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420, scale: 100 },
     };
   }
@@ -1351,7 +1373,7 @@ check();
       quiz: quizState(),
       roulette: rouletteState(),
       scheduleEnabled: config.scheduleEnabled,
-      schedule: config.schedule,
+      scheduleByWeek: config.scheduleByWeek,
       scheduleStyle: config.scheduleStyle,
       statsRecording: {
         active: !!currentStream,
@@ -1454,18 +1476,25 @@ check();
       }
     }
 
-    // ---- 配信スケジュール(曜日ごとの配信時間・内容) ----
+    // ---- 配信スケジュール(週ごとの配信時間・内容) ----
     if (body.scheduleEnabled !== undefined) { config.scheduleEnabled = !!body.scheduleEnabled; changed = true; }
-    if (body.schedule !== undefined && typeof body.schedule === 'object' && body.schedule !== null) {
+    if (
+      body.schedule !== undefined && typeof body.schedule === 'object' && body.schedule !== null &&
+      typeof body.scheduleWeek === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.scheduleWeek)
+    ) {
+      const wk = body.scheduleWeek;
+      const base = config.scheduleByWeek[wk] || sanitizeWeekMap({});
       for (const key of SCHEDULE_DAYS) {
         const d = body.schedule[key];
         if (d && typeof d === 'object') {
-          config.schedule[key] = {
-            time: typeof d.time === 'string' ? d.time.slice(0, 40) : config.schedule[key].time,
-            text: typeof d.text === 'string' ? d.text.slice(0, 100) : config.schedule[key].text,
+          base[key] = {
+            time: typeof d.time === 'string' ? d.time.slice(0, 40) : base[key].time,
+            text: typeof d.text === 'string' ? d.text.slice(0, 100) : base[key].text,
+            color: (typeof d.color === 'string' && (d.color === '' || /^#[0-9a-fA-F]{6}$/.test(d.color))) ? d.color : base[key].color,
           };
         }
       }
+      config.scheduleByWeek[wk] = base;
       changed = true;
     }
 
