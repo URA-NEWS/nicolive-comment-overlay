@@ -1284,7 +1284,7 @@
     const startRotation = rlWheelRotation;
     const currentMod = ((startRotation % 360) + 360) % 360;
     let deltaToTarget = (requiredMod - currentMod + 360) % 360;
-    const extraTurns = 9 + Math.floor(Math.random() * 3); // 回転数を増やして勢いよく
+    const extraTurns = 14 + Math.floor(Math.random() * 4); // 回転数を増やして勢いよく
     const totalDelta = deltaToTarget + extraTurns * 360;
     const endRotation = startRotation + totalDelta;
 
@@ -1295,8 +1295,8 @@
 
     function frame(now) {
       const t = Math.min(1, (now - startTime) / durationMs);
-      // 減速カーブ: 序盤の勢いを強く、終盤でしっかり止まる f(t) = 1-(1-t)^3
-      const eased = 1 - Math.pow(1 - t, 3);
+      // 減速カーブ: 序盤の勢いを強く、終盤でしっかり止まる f(t) = 1-(1-t)^4.5
+      const eased = 1 - Math.pow(1 - t, 4.5);
       const rotation = startRotation + totalDelta * eased;
       rlWheelRotation = rotation;
       rlSetRotation(rotation);
