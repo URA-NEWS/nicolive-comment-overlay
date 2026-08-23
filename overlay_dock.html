@@ -436,6 +436,45 @@
 <div id="hsCsvStatus" class="hint" style="margin-top:8px"></div>
 </div>
 
+<h2 class="acc">配信スケジュール</h2>
+<div class="accBody">
+<div class="hint">既存のオーバーレイ(ニコ生風・縦型)に自動で表示されます。新しいURLをOBSに追加する必要はありません。曜日ごとの内容は毎週使い回されます。あとから何度でも修正できます</div>
+
+<div style="display:flex;align-items:center;gap:10px;margin:10px 0 6px">
+  <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
+  <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
+  <button class="small" onclick="hsSchedWeekShift(1)">翌週 ▶</button>
+</div>
+<div class="hint" style="margin-bottom:8px">↑ここは日付の確認用のプレビューです(内容は毎週共通のため、翌週を押しても登録内容は変わりません)</div>
+
+<div id="hsSchedRows"></div>
+
+<div class="speed-row" style="margin-top:8px">
+  <button class="small" onclick="hsSaveSchedule()">スケジュールを保存</button>
+  <span id="hsSchedStatus" class="hint" style="margin:0"></span>
+</div>
+
+<div class="subhead" style="margin-top:18px">表示スタイル</div>
+<div class="speed-row" style="align-items:center;flex-wrap:wrap;gap:14px">
+  <label style="display:flex;align-items:center;gap:6px">文字色
+    <input type="color" id="hsSchedColor" style="width:44px;height:28px;padding:0;border:1px solid #333;background:none">
+  </label>
+  <label style="display:flex;align-items:center;gap:6px">文字サイズ
+    <input type="number" id="hsSchedFontSize" min="10" max="60" style="width:70px">px
+  </label>
+  <label style="display:flex;align-items:center;gap:6px">透過濃度
+    <input type="number" id="hsSchedOpacity" min="0" max="100" style="width:70px">%
+  </label>
+  <label style="display:flex;align-items:center;gap:6px">横幅
+    <input type="number" id="hsSchedWidth" min="120" max="2000" style="width:80px">px
+  </label>
+</div>
+<div class="speed-row" style="margin-top:8px">
+  <button class="small" onclick="hsSaveScheduleStyle()">スタイルを保存</button>
+  <span id="hsSchedStyleStatus" class="hint" style="margin:0"></span>
+</div>
+</div>
+
 <h2 class="acc">設定</h2>
 <div class="accBody">
 <div class="subhead">流れるスピード</div>
@@ -513,6 +552,10 @@
 <script>
   const BASE = (location.origin && location.origin !== 'null') ? location.origin : 'http://localhost:3941';
   document.getElementById('autoUrl').value = BASE + '/overlay-auto';
+
+  // 配信スケジュール
+  let scheduleInitialized = false;
+  let hsSchedWeekOffset = 0; // ドックのプレビュー用(日付表示のみに影響。内容は毎週共通)
 
   // 表示モード切り替え
   let displayModeInitialized = false;
@@ -621,8 +664,108 @@
         if (r2) r2.checked = true;
         displayModeInitialized = true;
       }
+
+      if (!scheduleInitialized && data.schedule && data.scheduleStyle) {
+        hsRenderSchedRows(data.schedule);
+        document.getElementById('hsSchedColor').value = data.scheduleStyle.color;
+        document.getElementById('hsSchedFontSize').value = data.scheduleStyle.fontSize;
+        document.getElementById('hsSchedOpacity').value = data.scheduleStyle.opacity;
+        document.getElementById('hsSchedWidth').value = data.scheduleStyle.width;
+        scheduleInitialized = true;
+      }
     } catch (e) {
       document.getElementById('status').textContent = 'サーバーに接続できません';
+    }
+  }
+
+  // ---------- 配信スケジュール ----------
+  const HS_SCHED_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const HS_SCHED_LABEL = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土', sun: '日' };
+  let hsSchedCurrent = null; // 直近取得したスケジュール内容(入力欄の再描画に使う)
+
+  // プレビュー用に「オフセット週の月曜日」を求める(内容自体は毎週共通なので日付表示のみに影響)
+  function hsSchedMonday(offsetWeeks) {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = (day === 0 ? -6 : 1 - day) + offsetWeeks * 7;
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  }
+
+  function hsRenderSchedRows(schedule) {
+    hsSchedCurrent = schedule;
+    const monday = hsSchedMonday(hsSchedWeekOffset);
+    document.getElementById('hsSchedWeekLabel').textContent =
+      hsSchedWeekOffset === 0 ? `今週(${monday.getMonth() + 1}/${monday.getDate()}〜)` : `${monday.getMonth() + 1}/${monday.getDate()}〜`;
+
+    const rowsEl = document.getElementById('hsSchedRows');
+    rowsEl.innerHTML = HS_SCHED_DAYS.map((key, i) => {
+      const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+      const entry = (schedule && schedule[key]) || { time: '', text: '' };
+      return `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <span style="min-width:70px;font-weight:700">${HS_SCHED_LABEL[key]}曜 <span style="font-weight:400;color:#888;font-size:11px">(${d.getMonth() + 1}/${d.getDate()})</span></span>
+          <input type="text" id="hsSchedTime_${key}" placeholder="配信時間(例:20:00〜)" value="${(entry.time || '').replace(/"/g, '&quot;')}" style="width:150px">
+          <input type="text" id="hsSchedText_${key}" placeholder="配信内容(例:雑談配信)" value="${(entry.text || '').replace(/"/g, '&quot;')}" style="flex:1;min-width:160px">
+        </div>`;
+    }).join('');
+  }
+
+  function hsSchedWeekShift(delta) {
+    hsSchedWeekOffset += delta;
+    hsRenderSchedRows(hsCollectScheduleFromInputs());
+  }
+
+  // 保存前に、今まさに入力欄にある内容を集める(週送りで再描画してもタイプ中の内容を失わないため)
+  function hsCollectScheduleFromInputs() {
+    const out = {};
+    HS_SCHED_DAYS.forEach((key) => {
+      const timeEl = document.getElementById(`hsSchedTime_${key}`);
+      const textEl = document.getElementById(`hsSchedText_${key}`);
+      out[key] = {
+        time: timeEl ? timeEl.value : (hsSchedCurrent?.[key]?.time || ''),
+        text: textEl ? textEl.value : (hsSchedCurrent?.[key]?.text || ''),
+      };
+    });
+    return out;
+  }
+
+  async function hsSaveSchedule() {
+    const statusEl = document.getElementById('hsSchedStatus');
+    statusEl.textContent = '保存中...';
+    try {
+      const schedule = hsCollectScheduleFromInputs();
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule }),
+      });
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+      hsSchedCurrent = schedule;
+      statusEl.textContent = '✅ 保存しました';
+    } catch (e) {
+      statusEl.textContent = '保存に失敗しました: ' + e.message;
+    }
+  }
+
+  async function hsSaveScheduleStyle() {
+    const statusEl = document.getElementById('hsSchedStyleStatus');
+    statusEl.textContent = '保存中...';
+    try {
+      const scheduleStyle = {
+        color: document.getElementById('hsSchedColor').value,
+        fontSize: Number(document.getElementById('hsSchedFontSize').value),
+        opacity: Number(document.getElementById('hsSchedOpacity').value),
+        width: Number(document.getElementById('hsSchedWidth').value),
+      };
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleStyle }),
+      });
+      if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
+      statusEl.textContent = '✅ 保存しました';
+    } catch (e) {
+      statusEl.textContent = '保存に失敗しました: ' + e.message;
     }
   }
 
