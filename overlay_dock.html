@@ -444,13 +444,13 @@
 </div>
 
 <div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:14px">
-  <div style="font-size:12px;font-weight:700;color:#ccc;letter-spacing:0.05em;margin-bottom:8px">曜日ごとの内容(毎週使い回されます)</div>
+  <div style="font-size:12px;font-weight:700;color:#ccc;letter-spacing:0.05em;margin-bottom:8px">曜日ごとの内容(週ごとに個別に設定できます)</div>
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
     <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
     <button class="small" onclick="hsSchedWeekShift(1)">翌週 ▶</button>
   </div>
-  <div class="hint" style="margin-bottom:10px">↑ここは日付の確認用のプレビューです(内容は毎週共通のため、翌週を押しても登録内容は変わりません)</div>
+  <div class="hint" style="margin-bottom:10px">週を切り替えてから保存すると、その週だけの内容として登録されます(他の週には影響しません)。オーバーレイには自動で「その時点の今週分」が表示されます。</div>
 
   <div id="hsSchedRows"></div>
 
@@ -462,10 +462,6 @@
 
 <div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px">
   <div style="font-size:12px;font-weight:700;color:#ccc;letter-spacing:0.05em;margin-bottom:8px">表示スタイル</div>
-  <div class="speed-row" style="gap:10px">
-    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">文字色</span>
-    <input type="color" id="hsSchedColor" style="width:44px;height:28px;padding:0;border:1px solid #333;background:none">
-  </div>
   <div class="speed-row">
     <span style="color:#aaa;white-space:nowrap;min-width:5.5em">文字サイズ</span>
     <input type="range" id="hsSchedFontSize" min="10" max="60">
@@ -573,7 +569,7 @@
 
   // 配信スケジュール
   let scheduleInitialized = false;
-  let hsSchedWeekOffset = 0; // ドックのプレビュー用(日付表示のみに影響。内容は毎週共通)
+  let hsSchedWeekOffset = 0; // 現在編集中の週(0=今週, 1=翌週 ...)。週ごとに個別の内容を保持する
 
   // 表示モード切り替え
   let displayModeInitialized = false;
@@ -683,10 +679,10 @@
         displayModeInitialized = true;
       }
 
-      if (!scheduleInitialized && data.schedule && data.scheduleStyle) {
-        hsRenderSchedRows(data.schedule);
+      if (!scheduleInitialized && data.scheduleByWeek && data.scheduleStyle) {
+        hsSchedByWeek = data.scheduleByWeek;
+        hsRenderSchedRows();
         hsSetSchedEnabledBtn(data.scheduleEnabled !== false);
-        document.getElementById('hsSchedColor').value = data.scheduleStyle.color;
         document.getElementById('hsSchedFontSize').value = data.scheduleStyle.fontSize;
         document.getElementById('hsSchedFontSizeVal').textContent = data.scheduleStyle.fontSize + 'px';
         document.getElementById('hsSchedOpacity').value = data.scheduleStyle.opacity;
@@ -705,9 +701,10 @@
   // ---------- 配信スケジュール ----------
   const HS_SCHED_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const HS_SCHED_LABEL = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土', sun: '日' };
-  let hsSchedCurrent = null; // 直近取得したスケジュール内容(入力欄の再描画に使う)
+  let hsSchedByWeek = {}; // サーバーから取得した「週(月曜日付)ごと」のスケジュール全体
+  const HS_SCHED_EMPTY_DAY = { time: '', text: '', color: '' };
 
-  // プレビュー用に「オフセット週の月曜日」を求める(内容自体は毎週共通なので日付表示のみに影響)
+  // 「オフセット週の月曜日」を求める(0=今週, 1=翌週, -1=先週 ...)
   function hsSchedMonday(offsetWeeks) {
     const now = new Date();
     const day = now.getDay();
@@ -715,16 +712,28 @@
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
   }
 
-  function hsRenderSchedRows(schedule) {
-    hsSchedCurrent = schedule;
+  // サーバー側(mondayISO)と同じ形式のキーを作る
+  function hsSchedWeekKey(monday) {
+    const mm = String(monday.getMonth() + 1).padStart(2, '0');
+    const dd = String(monday.getDate()).padStart(2, '0');
+    return `${monday.getFullYear()}-${mm}-${dd}`;
+  }
+
+  function hsCurrentWeekKey() {
+    return hsSchedWeekKey(hsSchedMonday(hsSchedWeekOffset));
+  }
+
+  function hsRenderSchedRows() {
     const monday = hsSchedMonday(hsSchedWeekOffset);
+    const weekKey = hsSchedWeekKey(monday);
+    const schedule = hsSchedByWeek[weekKey] || HS_SCHED_DAYS.reduce((o, k) => ((o[k] = HS_SCHED_EMPTY_DAY), o), {});
     document.getElementById('hsSchedWeekLabel').textContent =
       hsSchedWeekOffset === 0 ? `今週(${monday.getMonth() + 1}/${monday.getDate()}〜)` : `${monday.getMonth() + 1}/${monday.getDate()}〜`;
 
     const rowsEl = document.getElementById('hsSchedRows');
     rowsEl.innerHTML = HS_SCHED_DAYS.map((key, i) => {
       const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
-      const entry = (schedule && schedule[key]) || { time: '', text: '' };
+      const entry = schedule[key] || HS_SCHED_EMPTY_DAY;
       return `
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px 10px;background:#181818;border:1px solid #2a2a2a;border-radius:8px;flex-wrap:wrap">
           <span style="min-width:70px;display:flex;align-items:baseline;gap:4px">
@@ -733,24 +742,31 @@
           </span>
           <input type="text" id="hsSchedTime_${key}" placeholder="配信時間(例:20:00〜)" value="${(entry.time || '').replace(/"/g, '&quot;')}" style="width:150px">
           <input type="text" id="hsSchedText_${key}" placeholder="配信内容(例:雑談配信)" value="${(entry.text || '').replace(/"/g, '&quot;')}" style="flex:1;min-width:160px">
+          <label style="display:flex;align-items:center;gap:4px;color:#888;font-size:11px;white-space:nowrap">本文色
+            <input type="color" id="hsSchedColor_${key}" value="${entry.color || '#ffffff'}" style="width:30px;height:24px;padding:0;border:1px solid #333;background:none">
+          </label>
         </div>`;
     }).join('');
   }
 
   function hsSchedWeekShift(delta) {
+    // 週を切り替える前に、今まさに入力欄にある(未保存の)内容を保持しておく
+    hsSchedByWeek[hsCurrentWeekKey()] = hsCollectScheduleFromInputs();
     hsSchedWeekOffset += delta;
-    hsRenderSchedRows(hsCollectScheduleFromInputs());
+    hsRenderSchedRows();
   }
 
-  // 保存前に、今まさに入力欄にある内容を集める(週送りで再描画してもタイプ中の内容を失わないため)
+  // 現在の入力欄の内容を集める
   function hsCollectScheduleFromInputs() {
     const out = {};
     HS_SCHED_DAYS.forEach((key) => {
       const timeEl = document.getElementById(`hsSchedTime_${key}`);
       const textEl = document.getElementById(`hsSchedText_${key}`);
+      const colorEl = document.getElementById(`hsSchedColor_${key}`);
       out[key] = {
-        time: timeEl ? timeEl.value : (hsSchedCurrent?.[key]?.time || ''),
-        text: textEl ? textEl.value : (hsSchedCurrent?.[key]?.text || ''),
+        time: timeEl ? timeEl.value : '',
+        text: textEl ? textEl.value : '',
+        color: colorEl ? colorEl.value : '',
       };
     });
     return out;
@@ -760,14 +776,15 @@
     const statusEl = document.getElementById('hsSchedStatus');
     statusEl.textContent = '保存中...';
     try {
+      const weekKey = hsCurrentWeekKey();
       const schedule = hsCollectScheduleFromInputs();
       const res = await fetch('/api/overlay/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule }),
+        body: JSON.stringify({ scheduleWeek: weekKey, schedule }),
       });
       if (!res.ok) throw new Error(`サーバーエラー(${res.status})`);
-      hsSchedCurrent = schedule;
+      hsSchedByWeek[weekKey] = schedule;
       statusEl.textContent = '✅ 保存しました';
     } catch (e) {
       statusEl.textContent = '保存に失敗しました: ' + e.message;
@@ -779,7 +796,6 @@
     statusEl.textContent = '保存中...';
     try {
       const scheduleStyle = {
-        color: document.getElementById('hsSchedColor').value,
         fontSize: Number(document.getElementById('hsSchedFontSize').value),
         opacity: Number(document.getElementById('hsSchedOpacity').value),
         width: Number(document.getElementById('hsSchedWidth').value),
