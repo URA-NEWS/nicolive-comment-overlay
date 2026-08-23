@@ -813,7 +813,19 @@
     padding: 8px 10px;
   }
   .hsSchedRow.hsSchedToday::after { border-color: transparent; }
-  .hsSchedRow .hsSchedDt { opacity: 0.5; font-size: 0.66em; min-width: 1.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  .hsSchedRow .hsSchedDt {
+    opacity: 0.9;
+    font-size: 0.72em;
+    font-weight: 700;
+    min-width: 3em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+  .hsSchedRow.hsSchedToday .hsSchedDt { background: rgba(255,255,255,0.2); }
   .hsSchedRow .hsSchedWd {
     font-weight: 800;
     font-size: 0.8em;
@@ -844,7 +856,7 @@
   }
   .hsSchedRow.hsSchedToday .hsSchedTime { background: rgba(255,255,255,0.24); border-color: currentColor; }
   .hsSchedRow .hsSchedText { opacity: 0.92; font-size: 0.95em; }
-  .hsSchedRow .hsSchedOff { opacity: 0.35; font-style: italic; font-size: 0.85em; }
+  .hsSchedRow.hsSchedEmpty { opacity: 0.4; }
 </style>
 </head>
 <body>
@@ -1670,9 +1682,9 @@
       const timeHtml = entry.time ? `<span class="hsSchedTime">${hsSchedEscapeHtml(entry.time)}</span>` : '';
       const textHtml = hasContent
         ? `<span class="hsSchedText">${hsSchedEscapeHtml(entry.text)}</span>`
-        : `<span class="hsSchedOff">お休み</span>`;
-      html += `<div class="hsSchedRow${isToday ? ' hsSchedToday' : ''}">
-        <span class="hsSchedDt">${d.getDate()}</span>
+        : '';
+      html += `<div class="hsSchedRow${isToday ? ' hsSchedToday' : ''}${hasContent ? '' : ' hsSchedEmpty'}">
+        <span class="hsSchedDt">${d.getMonth() + 1}/${d.getDate()}</span>
         <span class="hsSchedWd">${HS_SCHED_LABEL[key]}</span>
         ${timeHtml}
         ${textHtml}
