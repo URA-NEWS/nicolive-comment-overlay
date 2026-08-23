@@ -438,47 +438,58 @@
 
 <h2 class="acc">配信スケジュール</h2>
 <div class="accBody">
-<div class="hint">既存のオーバーレイ(ニコ生風・縦型)に自動で表示されます。新しいURLをOBSに追加する必要はありません。曜日ごとの内容は毎週使い回されます。あとから何度でも修正できます</div>
-
-<div class="speed-row" style="margin:10px 0 6px">
-  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="checkbox" id="hsSchedEnabled" checked> オーバーレイに表示する
-  </label>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+  <div class="hint" style="margin:0;flex:1;min-width:200px">既存のオーバーレイ(ニコ生風・縦型)に自動で表示されます。新しいURLをOBSに追加する必要はありません。</div>
+  <button class="small" id="hsSchedEnabledBtn" onclick="hsToggleSchedEnabled()">表示中（クリックで非表示）</button>
 </div>
 
-<div style="display:flex;align-items:center;gap:10px;margin:10px 0 6px">
-  <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
-  <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
-  <button class="small" onclick="hsSchedWeekShift(1)">翌週 ▶</button>
+<div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+  <div style="font-size:12px;font-weight:700;color:#ccc;letter-spacing:0.05em;margin-bottom:8px">曜日ごとの内容(毎週使い回されます)</div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
+    <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
+    <button class="small" onclick="hsSchedWeekShift(1)">翌週 ▶</button>
+  </div>
+  <div class="hint" style="margin-bottom:10px">↑ここは日付の確認用のプレビューです(内容は毎週共通のため、翌週を押しても登録内容は変わりません)</div>
+
+  <div id="hsSchedRows"></div>
+
+  <div class="speed-row" style="margin-top:4px">
+    <button class="small" onclick="hsSaveSchedule()">スケジュールを保存</button>
+    <span id="hsSchedStatus" class="hint" style="margin:0"></span>
+  </div>
 </div>
-<div class="hint" style="margin-bottom:8px">↑ここは日付の確認用のプレビューです(内容は毎週共通のため、翌週を押しても登録内容は変わりません)</div>
 
-<div id="hsSchedRows"></div>
-
-<div class="speed-row" style="margin-top:8px">
-  <button class="small" onclick="hsSaveSchedule()">スケジュールを保存</button>
-  <span id="hsSchedStatus" class="hint" style="margin:0"></span>
-</div>
-
-<div class="subhead" style="margin-top:18px">表示スタイル</div>
-<div class="speed-row" style="align-items:center;flex-wrap:wrap;gap:14px">
-  <label style="display:flex;align-items:center;gap:6px">文字色
+<div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px">
+  <div style="font-size:12px;font-weight:700;color:#ccc;letter-spacing:0.05em;margin-bottom:8px">表示スタイル</div>
+  <div class="speed-row" style="gap:10px">
+    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">文字色</span>
     <input type="color" id="hsSchedColor" style="width:44px;height:28px;padding:0;border:1px solid #333;background:none">
-  </label>
-  <label style="display:flex;align-items:center;gap:6px">文字サイズ
-    <input type="range" id="hsSchedFontSize" min="10" max="60" style="width:120px">
+  </div>
+  <div class="speed-row">
+    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">文字サイズ</span>
+    <input type="range" id="hsSchedFontSize" min="10" max="60">
     <span id="hsSchedFontSizeVal" style="min-width:2.4em;display:inline-block">18px</span>
-  </label>
-  <label style="display:flex;align-items:center;gap:6px">透過濃度
-    <input type="number" id="hsSchedOpacity" min="0" max="100" style="width:70px">%
-  </label>
-  <label style="display:flex;align-items:center;gap:6px">横幅
-    <input type="number" id="hsSchedWidth" min="120" max="2000" style="width:80px">px
-  </label>
-</div>
-<div class="speed-row" style="margin-top:8px">
-  <button class="small" onclick="hsSaveScheduleStyle()">スタイルを保存</button>
-  <span id="hsSchedStyleStatus" class="hint" style="margin:0"></span>
+  </div>
+  <div class="speed-row">
+    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">拡大率</span>
+    <input type="range" id="hsSchedScale" min="50" max="300">
+    <span id="hsSchedScaleVal" style="min-width:2.8em;display:inline-block">100%</span>
+  </div>
+  <div class="speed-row">
+    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">透過濃度</span>
+    <input type="range" id="hsSchedOpacity" min="0" max="100">
+    <span id="hsSchedOpacityVal" style="min-width:2.8em;display:inline-block">70%</span>
+  </div>
+  <div class="speed-row">
+    <span style="color:#aaa;white-space:nowrap;min-width:5.5em">横幅</span>
+    <input type="range" id="hsSchedWidth" min="120" max="2000">
+    <span id="hsSchedWidthVal" style="min-width:3.6em;display:inline-block">420px</span>
+  </div>
+  <div class="speed-row" style="margin-top:8px">
+    <button class="small" onclick="hsSaveScheduleStyle()">スタイルを保存</button>
+    <span id="hsSchedStyleStatus" class="hint" style="margin:0"></span>
+  </div>
 </div>
 </div>
 
@@ -674,12 +685,16 @@
 
       if (!scheduleInitialized && data.schedule && data.scheduleStyle) {
         hsRenderSchedRows(data.schedule);
-        document.getElementById('hsSchedEnabled').checked = data.scheduleEnabled !== false;
+        hsSetSchedEnabledBtn(data.scheduleEnabled !== false);
         document.getElementById('hsSchedColor').value = data.scheduleStyle.color;
         document.getElementById('hsSchedFontSize').value = data.scheduleStyle.fontSize;
         document.getElementById('hsSchedFontSizeVal').textContent = data.scheduleStyle.fontSize + 'px';
         document.getElementById('hsSchedOpacity').value = data.scheduleStyle.opacity;
+        document.getElementById('hsSchedOpacityVal').textContent = data.scheduleStyle.opacity + '%';
         document.getElementById('hsSchedWidth').value = data.scheduleStyle.width;
+        document.getElementById('hsSchedWidthVal').textContent = data.scheduleStyle.width + 'px';
+        document.getElementById('hsSchedScale').value = data.scheduleStyle.scale !== undefined ? data.scheduleStyle.scale : 100;
+        document.getElementById('hsSchedScaleVal').textContent = (data.scheduleStyle.scale !== undefined ? data.scheduleStyle.scale : 100) + '%';
         scheduleInitialized = true;
       }
     } catch (e) {
@@ -711,8 +726,11 @@
       const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
       const entry = (schedule && schedule[key]) || { time: '', text: '' };
       return `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <span style="min-width:70px;font-weight:700">${HS_SCHED_LABEL[key]}曜 <span style="font-weight:400;color:#888;font-size:11px">(${d.getMonth() + 1}/${d.getDate()})</span></span>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px 10px;background:#181818;border:1px solid #2a2a2a;border-radius:8px;flex-wrap:wrap">
+          <span style="min-width:70px;display:flex;align-items:baseline;gap:4px">
+            <b style="font-size:14px">${HS_SCHED_LABEL[key]}曜</b>
+            <span style="font-weight:400;color:#888;font-size:11px">(${d.getMonth() + 1}/${d.getDate()})</span>
+          </span>
           <input type="text" id="hsSchedTime_${key}" placeholder="配信時間(例:20:00〜)" value="${(entry.time || '').replace(/"/g, '&quot;')}" style="width:150px">
           <input type="text" id="hsSchedText_${key}" placeholder="配信内容(例:雑談配信)" value="${(entry.text || '').replace(/"/g, '&quot;')}" style="flex:1;min-width:160px">
         </div>`;
@@ -765,6 +783,7 @@
         fontSize: Number(document.getElementById('hsSchedFontSize').value),
         opacity: Number(document.getElementById('hsSchedOpacity').value),
         width: Number(document.getElementById('hsSchedWidth').value),
+        scale: Number(document.getElementById('hsSchedScale').value),
       };
       const res = await fetch('/api/overlay/config', {
         method: 'POST',
@@ -871,17 +890,39 @@
     } catch (err) {}
   });
 
-  document.getElementById('hsSchedEnabled').addEventListener('change', async (e) => {
+  let hsSchedEnabledState = true;
+
+  function hsSetSchedEnabledBtn(visible) {
+    const btn = document.getElementById('hsSchedEnabledBtn');
+    if (!btn) return;
+    hsSchedEnabledState = !!visible;
+    btn.textContent = hsSchedEnabledState ? '表示中（クリックで非表示）' : '非表示中（クリックで表示）';
+    btn.style.background = hsSchedEnabledState ? '#2e7d32' : '#555';
+  }
+
+  async function hsToggleSchedEnabled() {
+    const next = !hsSchedEnabledState;
+    hsSetSchedEnabledBtn(next); // 即座に見た目を切り替え(体感速度優先)
     try {
       await fetch('/api/overlay/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduleEnabled: e.target.checked }),
+        body: JSON.stringify({ scheduleEnabled: next }),
       });
     } catch (err) {}
-  });
+  }
+
   document.getElementById('hsSchedFontSize').addEventListener('input', (e) => {
     document.getElementById('hsSchedFontSizeVal').textContent = e.target.value + 'px';
+  });
+  document.getElementById('hsSchedScale').addEventListener('input', (e) => {
+    document.getElementById('hsSchedScaleVal').textContent = e.target.value + '%';
+  });
+  document.getElementById('hsSchedOpacity').addEventListener('input', (e) => {
+    document.getElementById('hsSchedOpacityVal').textContent = e.target.value + '%';
+  });
+  document.getElementById('hsSchedWidth').addEventListener('input', (e) => {
+    document.getElementById('hsSchedWidthVal').textContent = e.target.value + 'px';
   });
 
   // ---------- セクション開閉 ----------
