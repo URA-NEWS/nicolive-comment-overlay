@@ -82,6 +82,7 @@ function loadConfig() {
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
+    if (typeof c.scheduleEnabled !== 'boolean') c.scheduleEnabled = true;
     if (typeof c.schedule !== 'object' || c.schedule === null) c.schedule = {};
     for (const key of SCHEDULE_DAYS) {
       const d = c.schedule[key];
@@ -99,6 +100,7 @@ function loadConfig() {
   } catch {
     return {
       liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
+      scheduleEnabled: true,
       schedule: Object.fromEntries(SCHEDULE_DAYS.map((k) => [k, { time: '', text: '' }])),
       scheduleStyle: { color: '#ffffff', fontSize: 18, opacity: 70, width: 420 },
     };
@@ -1347,6 +1349,7 @@ check();
       survey: surveyState(),
       quiz: quizState(),
       roulette: rouletteState(),
+      scheduleEnabled: config.scheduleEnabled,
       schedule: config.schedule,
       scheduleStyle: config.scheduleStyle,
       statsRecording: {
@@ -1451,6 +1454,7 @@ check();
     }
 
     // ---- 配信スケジュール(曜日ごとの配信時間・内容) ----
+    if (body.scheduleEnabled !== undefined) { config.scheduleEnabled = !!body.scheduleEnabled; changed = true; }
     if (body.schedule !== undefined && typeof body.schedule === 'object' && body.schedule !== null) {
       for (const key of SCHEDULE_DAYS) {
         const d = body.schedule[key];
