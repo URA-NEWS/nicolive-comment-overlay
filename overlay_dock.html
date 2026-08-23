@@ -440,6 +440,12 @@
 <div class="accBody">
 <div class="hint">既存のオーバーレイ(ニコ生風・縦型)に自動で表示されます。新しいURLをOBSに追加する必要はありません。曜日ごとの内容は毎週使い回されます。あとから何度でも修正できます</div>
 
+<div class="speed-row" style="margin:10px 0 6px">
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="hsSchedEnabled" checked> オーバーレイに表示する
+  </label>
+</div>
+
 <div style="display:flex;align-items:center;gap:10px;margin:10px 0 6px">
   <button class="small" onclick="hsSchedWeekShift(-1)">◀ 前週</button>
   <span id="hsSchedWeekLabel" style="font-weight:700;min-width:120px;text-align:center"></span>
@@ -460,7 +466,8 @@
     <input type="color" id="hsSchedColor" style="width:44px;height:28px;padding:0;border:1px solid #333;background:none">
   </label>
   <label style="display:flex;align-items:center;gap:6px">文字サイズ
-    <input type="number" id="hsSchedFontSize" min="10" max="60" style="width:70px">px
+    <input type="range" id="hsSchedFontSize" min="10" max="60" style="width:120px">
+    <span id="hsSchedFontSizeVal" style="min-width:2.4em;display:inline-block">18px</span>
   </label>
   <label style="display:flex;align-items:center;gap:6px">透過濃度
     <input type="number" id="hsSchedOpacity" min="0" max="100" style="width:70px">%
@@ -667,8 +674,10 @@
 
       if (!scheduleInitialized && data.schedule && data.scheduleStyle) {
         hsRenderSchedRows(data.schedule);
+        document.getElementById('hsSchedEnabled').checked = data.scheduleEnabled !== false;
         document.getElementById('hsSchedColor').value = data.scheduleStyle.color;
         document.getElementById('hsSchedFontSize').value = data.scheduleStyle.fontSize;
+        document.getElementById('hsSchedFontSizeVal').textContent = data.scheduleStyle.fontSize + 'px';
         document.getElementById('hsSchedOpacity').value = data.scheduleStyle.opacity;
         document.getElementById('hsSchedWidth').value = data.scheduleStyle.width;
         scheduleInitialized = true;
@@ -860,6 +869,19 @@
         body: JSON.stringify({ showKick: e.target.checked }),
       });
     } catch (err) {}
+  });
+
+  document.getElementById('hsSchedEnabled').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleEnabled: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+  document.getElementById('hsSchedFontSize').addEventListener('input', (e) => {
+    document.getElementById('hsSchedFontSizeVal').textContent = e.target.value + 'px';
   });
 
   // ---------- セクション開閉 ----------
