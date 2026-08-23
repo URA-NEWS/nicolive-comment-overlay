@@ -1460,12 +1460,16 @@
   }
 
   // コメント一覧の反対側に表示する(list.pos-leftなら右側、list.pos-rightなら左側)
-  function renderSchedule(schedule, style, verticalPos) {
+  function renderSchedule(schedule, style, verticalPos, enabled) {
     const wrap = document.getElementById('hsSchedWrap');
     const panel = document.getElementById('hsSchedPanel');
     const rowsEl = document.getElementById('hsSchedRows');
     const headingEl = document.getElementById('hsSchedHeading');
     if (!wrap || !schedule || !style) return;
+    if (enabled === false) {
+      wrap.classList.remove('in');
+      return;
+    }
 
     const sideCls = verticalPos === 'left' ? 'hsSchedOnRight' : 'hsSchedOnLeft';
     if (!wrap.classList.contains(sideCls)) {
@@ -1540,7 +1544,7 @@
       rb.classList.remove('pos-left', 'pos-right');
       rb.classList.add(posCls);
       updateStats(data);
-      renderSchedule(data.schedule, data.scheduleStyle, data.verticalPos);
+      renderSchedule(data.schedule, data.scheduleStyle, data.verticalPos, data.scheduleEnabled);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--bg-op', (data.bgOpacity / 100).toFixed(2));
       }
