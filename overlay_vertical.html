@@ -735,6 +735,35 @@
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
   }
+
+  /* 配信スケジュール(ドックの「配信スケジュール」で登録・見た目を調整) */
+  /* コメント一覧とは反対側に表示して重ならないようにする */
+  #hsSchedWrap {
+    position: fixed;
+    top: 50%;
+    z-index: 500;
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #hsSchedWrap.hsSchedOnLeft { left: 0; transform: translate(-110%, -50%); }
+  #hsSchedWrap.hsSchedOnLeft.in { transform: translate(0, -50%); }
+  #hsSchedWrap.hsSchedOnRight { right: 0; transform: translate(110%, -50%); }
+  #hsSchedWrap.hsSchedOnRight.in { transform: translate(0, -50%); }
+  #hsSchedPanel {
+    box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+    padding: 14px 18px;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  }
+  .hsSchedOnLeft #hsSchedPanel { border-radius: 0 10px 10px 0; }
+  .hsSchedOnRight #hsSchedPanel { border-radius: 10px 0 0 10px; }
+  #hsSchedPanel .hsSchedHeading { font-weight: 800; margin-bottom: 8px; opacity: 0.85; letter-spacing: 0.05em; font-size: 0.8em; }
+  .hsSchedRow { display: flex; align-items: baseline; gap: 10px; padding: 5px 2px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+  .hsSchedRow:last-child { border-bottom: none; }
+  .hsSchedRow.hsSchedToday { background: rgba(255,255,255,0.12); border-radius: 4px; padding-left: 6px; margin-left: -6px; }
+  .hsSchedRow .hsSchedDt { opacity: 0.7; font-size: 0.75em; min-width: 1.8em; }
+  .hsSchedRow .hsSchedWd { font-weight: 800; min-width: 2.4em; }
+  .hsSchedRow .hsSchedTime { font-weight: 700; white-space: nowrap; }
+  .hsSchedRow .hsSchedText { opacity: 0.95; }
+  .hsSchedRow .hsSchedOff { opacity: 0.55; font-style: italic; }
 </style>
 </head>
 <body>
@@ -794,6 +823,10 @@
     <div id="rlSpinningTag">SPINNING...</div>
   </div>
 </div>
+<div id="hsSchedWrap"><div id="hsSchedPanel">
+  <div class="hsSchedHeading" id="hsSchedHeading"></div>
+  <div id="hsSchedRows"></div>
+</div></div>
 <script>
   // ?platform=tiktok を付けると、メインのふわっち/Kickとは独立してTikTokのコメントだけを表示できる
   // (TikTokキャプチャ用ウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
@@ -1409,6 +1442,83 @@
     }
   }
 
+  // ---------- 配信スケジュール ----------
+  const HS_SCHED_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const HS_SCHED_LABEL = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土', sun: '日' };
+  let hsSchedSignature = null;
+  let hsSchedShownOnce = false;
+
+  function hsSchedEscapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function hsSchedMonday() {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  }
+
+  // コメント一覧の反対側に表示する(list.pos-leftなら右側、list.pos-rightなら左側)
+  function renderSchedule(schedule, style, verticalPos) {
+    const wrap = document.getElementById('hsSchedWrap');
+    const panel = document.getElementById('hsSchedPanel');
+    const rowsEl = document.getElementById('hsSchedRows');
+    const headingEl = document.getElementById('hsSchedHeading');
+    if (!wrap || !schedule || !style) return;
+
+    const sideCls = verticalPos === 'left' ? 'hsSchedOnRight' : 'hsSchedOnLeft';
+    if (!wrap.classList.contains(sideCls)) {
+      wrap.classList.remove('hsSchedOnLeft', 'hsSchedOnRight', 'in');
+      wrap.classList.add(sideCls);
+      hsSchedShownOnce = false; // 辺が変わったら再度スライドインさせる
+    }
+
+    panel.style.color = style.color || '#ffffff';
+    panel.style.fontSize = (style.fontSize || 18) + 'px';
+    panel.style.width = (style.width || 420) + 'px';
+    panel.style.background = `rgba(0,0,0,${((style.opacity !== undefined ? style.opacity : 70) / 100).toFixed(2)})`;
+
+    const monday = hsSchedMonday();
+    const todayStr = new Date().toDateString();
+    headingEl.textContent = `${monday.getMonth() + 1}月の配信スケジュール`;
+
+    let html = '';
+    let hasAny = false;
+    HS_SCHED_DAYS.forEach((key, i) => {
+      const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+      const isToday = d.toDateString() === todayStr;
+      const entry = schedule[key] || { time: '', text: '' };
+      const hasContent = !!(entry.time || entry.text);
+      if (hasContent) hasAny = true;
+      const timeHtml = entry.time ? `<span class="hsSchedTime">${hsSchedEscapeHtml(entry.time)}</span>` : '';
+      const textHtml = hasContent
+        ? `<span class="hsSchedText">${hsSchedEscapeHtml(entry.text)}</span>`
+        : `<span class="hsSchedOff">お休み</span>`;
+      html += `<div class="hsSchedRow${isToday ? ' hsSchedToday' : ''}">
+        <span class="hsSchedDt">${d.getDate()}</span>
+        <span class="hsSchedWd">${HS_SCHED_LABEL[key]}</span>
+        ${timeHtml}
+        ${textHtml}
+      </div>`;
+    });
+    rowsEl.innerHTML = html;
+    if (!hasAny) {
+      wrap.classList.remove('in');
+      return;
+    }
+
+    const signature = JSON.stringify({ schedule, style, verticalPos });
+    if (signature !== hsSchedSignature) {
+      hsSchedSignature = signature;
+      wrap.classList.remove('in');
+      requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('in')));
+    } else if (!hsSchedShownOnce) {
+      wrap.classList.add('in');
+    }
+    hsSchedShownOnce = true;
+  }
+
   async function pollStatus() {
     try {
       const res = await fetch(STATUS_URL);
@@ -1430,6 +1540,7 @@
       rb.classList.remove('pos-left', 'pos-right');
       rb.classList.add(posCls);
       updateStats(data);
+      renderSchedule(data.schedule, data.scheduleStyle, data.verticalPos);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--bg-op', (data.bgOpacity / 100).toFixed(2));
       }
