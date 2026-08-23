@@ -1655,7 +1655,7 @@
     return `${monday.getFullYear()}-${mm}-${dd}`;
   }
 
-  function renderSchedule(scheduleByWeek, style, enabled) {
+  function renderSchedule(scheduleByWeek, style, enabled, displayWeek) {
     const wrap = document.getElementById('hsSchedWrap');
     const panel = document.getElementById('hsSchedPanel');
     const rowsEl = document.getElementById('hsSchedRows');
@@ -1673,7 +1673,10 @@
     panel.style.transformOrigin = 'right center';
     panel.style.transform = `scale(${(style.scale !== undefined ? style.scale : 100) / 100})`;
 
-    const monday = hsSchedMonday();
+    // 通常は実際の今週。displayWeekが指定されていれば、その週を強制的に表示する(下書きプレビュー用)
+    const monday = (displayWeek && /^\d{4}-\d{2}-\d{2}$/.test(displayWeek))
+      ? (() => { const [y, m, d] = displayWeek.split('-').map(Number); return new Date(y, m - 1, d); })()
+      : hsSchedMonday();
     const weekKey = hsSchedWeekKey(monday);
     const schedule = scheduleByWeek[weekKey] || {};
     const todayStr = new Date().toDateString();
@@ -1723,7 +1726,7 @@
         DURATION = data.speed;
       }
       updateStats(data);
-      renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.scheduleEnabled);
+      renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.scheduleEnabled, data.scheduleDisplayWeek);
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--c-op', (0.45 + (data.bgOpacity / 100) * 0.55).toFixed(2));
       }
