@@ -1684,13 +1684,12 @@
       return;
     }
 
-    const signature = JSON.stringify({ schedule, style });
-    if (signature !== hsSchedSignature) {
-      hsSchedSignature = signature;
-      wrap.classList.remove('in');
+    // 中身は常に最新化するが、既に表示中ならスライドインは再生しない
+    // (配信中にスケジュールや見た目を保存するたびに毎回スライドし直すと邪魔なため、
+    //  非表示→表示に切り替わった時だけスライドインする)
+    hsSchedSignature = JSON.stringify({ schedule, style });
+    if (!wrap.classList.contains('in')) {
       requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('in')));
-    } else if (!hsSchedShownOnce) {
-      wrap.classList.add('in');
     }
     hsSchedShownOnce = true;
   }
