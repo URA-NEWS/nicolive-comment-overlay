@@ -343,19 +343,20 @@
   /* ===== トークのお題 ===== */
   #topicBar {
     position: fixed;
-    bottom: 0;
+    top: 62px;
     left: 12px;
     right: 12px;
-    transform: translateY(110%);
+    transform: translateY(-110%);
     background: linear-gradient(135deg, rgba(14,14,16,0.97) 0%, rgba(8,8,10,0.97) 100%);
-    border-radius: 14px 14px 0 0;
-    padding: 16px 30px 20px;
-    box-shadow: 0 -8px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
+    border-radius: 0 0 14px 14px;
+    padding: 12px 30px 16px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
     z-index: 15;
     font-family: "Noto Sans JP", "Yu Gothic UI", sans-serif;
     display: flex;
-    align-items: center;
-    gap: 22px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
     transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
     opacity: 0;
   }
@@ -366,7 +367,7 @@
   #topicBar::before {
     content: '';
     position: absolute;
-    left: 0; right: 0; top: 0;
+    left: 0; right: 0; bottom: 0;
     height: 3px;
     background: linear-gradient(90deg, #ff8c1a, #ffb347, #ff8c1a);
     background-size: 200% 100%;
@@ -377,15 +378,12 @@
     to   { background-position: 200% 0; }
   }
   #topicLabel {
-    flex-shrink: 0;
     font-size: 13px;
     font-weight: 900;
     letter-spacing: 3px;
     color: #ff8c1a;
     text-shadow: 0 0 16px rgba(255,140,26,0.55);
-    padding-right: 22px;
-    border-right: 1px solid rgba(255,255,255,0.14);
-    line-height: 1.5;
+    line-height: 1.4;
   }
   #topicText {
     font-size: 34px;
@@ -883,7 +881,7 @@
   <div id="svTotal"></div>
 </div>
 <div id="topicBar">
-  <div id="topicLabel">TALK<br>THEME</div>
+  <div id="topicLabel">トークテーマNOW</div>
   <div id="topicText"></div>
 </div>
 <div id="goalBox">
