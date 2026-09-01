@@ -393,6 +393,42 @@
     text-shadow: 0 2px 14px rgba(0,0,0,0.6);
     word-break: break-word;
   }
+  /* ===== コメント無言タイマー(60秒無言→30秒カウントダウン) ===== */
+  #qtBadge {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    background: rgba(8,8,10,0.9);
+    border: 1px solid rgba(255,140,26,0.5);
+    border-radius: 999px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+    font-family: "Noto Sans JP", "Yu Gothic UI", sans-serif;
+    opacity: 0;
+    transform: translateY(12px) scale(0.9);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+  }
+  #qtBadge.show { opacity: 1; transform: translateY(0) scale(1); }
+  #qtBadge .qtLabel { font-size: 13px; font-weight: 700; color: #ffb347; white-space: nowrap; }
+  #qtBadge #qtNum {
+    font-size: 22px;
+    font-weight: 900;
+    color: #fff;
+    min-width: 1.4em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  #qtBadge.urgent { border-color: rgba(255,60,60,0.85); animation: qtPulse 0.6s ease-in-out infinite; }
+  #qtBadge.urgent #qtNum { color: #ff5555; }
+  @keyframes qtPulse {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(0) scale(1.06); }
+  }
   /* ===== 目標フォロワー ===== */
   #goalBox {
     position: fixed;
@@ -884,6 +920,10 @@
   <div id="topicLabel">トークテーマNOW</div>
   <div id="topicText"></div>
 </div>
+<div id="qtBadge">
+  <span class="qtLabel">コメント募集中…</span>
+  <span id="qtNum">30</span>
+</div>
 <div id="goalBox">
   <div id="goalTop">
     <span id="goalLabel">目標達成でプレゼント</span>
@@ -939,6 +979,26 @@
   const stage = document.getElementById('stage');
   let lastId = null; // 初回は既存コメントを少し間隔をあけて流す
   let lastPlatform = null;
+
+  // ===== コメント無言タイマー(60秒コメントなし→30秒カウントダウン、途中でコメントが来たら自動リセット) =====
+  const QT_SILENCE_MS = 30000; // これだけ新規コメントが無いとカウントダウン開始
+  const QT_COUNTDOWN_SEC = 30; // カウントダウンの秒数
+  let qtLastActivity = Date.now();
+  function qtNoteActivity() { qtLastActivity = Date.now(); }
+  function qtTick() {
+    const badge = document.getElementById('qtBadge');
+    if (!badge) return;
+    const elapsed = Date.now() - qtLastActivity;
+    if (elapsed < QT_SILENCE_MS) {
+      badge.classList.remove('show');
+      return;
+    }
+    const remain = Math.max(0, QT_COUNTDOWN_SEC - Math.floor((elapsed - QT_SILENCE_MS) / 1000));
+    badge.classList.add('show');
+    badge.classList.toggle('urgent', remain <= 10);
+    document.getElementById('qtNum').textContent = remain;
+  }
+  setInterval(qtTick, 250);
 
   const numLanes = Math.max(1, Math.floor(window.innerHeight / LANE_HEIGHT));
   const laneFreeAt = new Array(numLanes).fill(0); // 各レーンが空く時刻(ms)
@@ -1751,6 +1811,7 @@
           spawnComment(c);
         }
       }
+      if (data.comments.length > 0) qtNoteActivity(); // コメントが来たので無言タイマーをリセット
       lastId = data.lastId;
     } catch (e) {
       // サーバー未起動時などは無視してリトライ
