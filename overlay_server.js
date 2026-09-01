@@ -1018,6 +1018,7 @@ async function connectKickChat(slug) {
 
   let handshakeDone = false;
   let buffer = Buffer.alloc(0);
+  let pingInterval = null;
 
   function handleMessage(str) {
     try {
@@ -1028,6 +1029,12 @@ async function connectKickChat(slug) {
           event: 'pusher:subscribe',
           data: { auth: '', channel: `chatrooms.${chatroomId}.v2` },
         }));
+        // Pusherのactivity_timeout(Kickは30秒程度)より前にこちらからpingを送り続けないと
+        // 無通信とみなされて切断されてしまうため、定期的にクライアント側からpingを送る
+        if (pingInterval) clearInterval(pingInterval);
+        pingInterval = setInterval(() => {
+          try { wsSendText(JSON.stringify({ event: 'pusher:ping', data: {} })); } catch {}
+        }, 20000);
       } else if (msg.event === 'pusher_internal:subscription_succeeded') {
         console.log('[Kick] チャンネル購読完了。コメント受信待機中');
       } else if (msg.event === 'pusher:ping') {
@@ -1093,6 +1100,7 @@ async function connectKickChat(slug) {
 
   socket.on('close', () => {
     console.log('[Kick] Pusher切断。30秒後にリトライ...');
+    if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
     if (kickWs === socket) kickWs = null;
     if (config.kickSlug || config.kickChatroomId) {
       kickReconnectTimer = setTimeout(() => connectKickChat(config.kickSlug), 30000);
@@ -1101,6 +1109,7 @@ async function connectKickChat(slug) {
 
   socket.on('error', (e) => {
     console.error('[Kick] WS error:', e.message);
+    if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
   });
 }
 
