@@ -401,10 +401,10 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 10px 18px;
+    gap: 10px;
+    padding: 16px 28px;
     background: rgba(8,8,10,0.9);
-    border: 1px solid rgba(255,140,26,0.5);
+    border: 2px solid rgba(255,140,26,0.5);
     border-radius: 999px;
     box-shadow: 0 8px 28px rgba(0,0,0,0.6);
     font-family: "Noto Sans JP", "Yu Gothic UI", sans-serif;
@@ -414,10 +414,10 @@
     pointer-events: none;
   }
   #qtBadge.show { opacity: 1; transform: translateY(0) scale(1); }
-  #qtBadge .qtLabel { font-size: 13px; font-weight: 700; color: #ffb347; white-space: nowrap; }
-  #qtBadge .qtUnit { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; }
+  #qtBadge .qtLabel { font-size: 18px; font-weight: 700; color: #ffb347; white-space: nowrap; }
+  #qtBadge .qtUnit { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
   #qtBadge #qtNum {
-    font-size: 22px;
+    font-size: 34px;
     font-weight: 900;
     color: #fff;
     min-width: 1.4em;
@@ -985,11 +985,15 @@
   // ===== コメント無言タイマー(60秒コメントなし→30秒カウントダウン、途中でコメントが来たら自動リセット) =====
   const QT_SILENCE_MS = 30000; // これだけ新規コメントが無いとカウントダウン開始
   const QT_COUNTDOWN_SEC = 30; // カウントダウンの秒数
-  let qtLastActivity = Date.now();
+  let qtLastActivity = null; // コメントを一度も取得していない間はタイマー開始しない
   function qtNoteActivity() { qtLastActivity = Date.now(); }
   function qtTick() {
     const badge = document.getElementById('qtBadge');
     if (!badge) return;
+    if (qtLastActivity === null) {
+      badge.classList.remove('show');
+      return;
+    }
     const elapsed = Date.now() - qtLastActivity;
     if (elapsed < QT_SILENCE_MS) {
       badge.classList.remove('show');
