@@ -251,19 +251,19 @@
     <input type="checkbox" id="showKick" checked> Kick
   </label>
 </div>
-<label>コメント欄に流すプラットフォーム</label>
+<label>コメント欄に流すプラットフォーム(複数選択可)</label>
 <div class="speed-row" style="gap:14px">
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="radio" name="commentSource" value="fw" checked> ふわっち
+    <input type="checkbox" name="commentSource" value="fw" checked> ふわっち
   </label>
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="radio" name="commentSource" value="kick"> Kick
+    <input type="checkbox" name="commentSource" value="kick"> Kick
   </label>
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="radio" name="commentSource" value="tiktok"> TikTok
+    <input type="checkbox" name="commentSource" value="tiktok"> TikTok
   </label>
 </div>
-<div class="hint">フォロワー数・閲覧数のヘッダーは両方同時に表示されます</div>
+<div class="hint">フォロワー数・閲覧数のヘッダーは両方同時に表示されます。複数チェックした場合、コメビュ上でプラットフォームごとに色分け表示されます</div>
 
 <label for="tiktokUsername" style="margin-top:12px">TikTokユーザー名（@なし、例: tiktok）</label>
 <input type="text" id="tiktokUsername" placeholder="tiktok または https://www.tiktok.com/@tiktok/live">
@@ -668,9 +668,13 @@
         headerVisInitialized = true;
       }
 
-      if (!commentSourceInitialized && data.commentSource) {
-        const rc = document.querySelector(`input[name="commentSource"][value="${data.commentSource}"]`);
-        if (rc) rc.checked = true;
+      if (!commentSourceInitialized && (data.commentSources || data.commentSource)) {
+        const sources = Array.isArray(data.commentSources) && data.commentSources.length
+          ? data.commentSources
+          : [data.commentSource];
+        document.querySelectorAll('input[name="commentSource"]').forEach((cb) => {
+          cb.checked = sources.includes(cb.value);
+        });
         commentSourceInitialized = true;
       }
 
@@ -866,14 +870,20 @@
     }
   }
 
-  // ---------- コメントソース切り替え ----------
-  document.querySelectorAll('input[name="commentSource"]').forEach((radio) => {
-    radio.addEventListener('change', async () => {
+  // ---------- コメントソース切り替え(複数選択可) ----------
+  document.querySelectorAll('input[name="commentSource"]').forEach((cb) => {
+    cb.addEventListener('change', async (ev) => {
+      const checked = Array.from(document.querySelectorAll('input[name="commentSource"]:checked')).map((c) => c.value);
+      if (checked.length === 0) {
+        // 最低1つは選択必須。外そうとした場合は元に戻す
+        ev.target.checked = true;
+        return;
+      }
       try {
         await fetch('/api/overlay/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ commentSource: radio.value }),
+          body: JSON.stringify({ commentSources: checked }),
         });
       } catch (e) {}
     });
