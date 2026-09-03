@@ -239,6 +239,7 @@
 <label for="liveUrl">配信URL（ふわっち / Kick どちらでもOK・自動判別）</label>
 <input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... または https://kick.com/...">
 <button onclick="setLiveId()">設定</button>
+<button onclick="disconnectMain()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
 <div class="msg" id="msg"></div>
 <div id="kickStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
 
@@ -268,6 +269,7 @@
 <label for="tiktokUsername" style="margin-top:12px">TikTokユーザー名（@なし、例: tiktok）</label>
 <input type="text" id="tiktokUsername" placeholder="tiktok または https://www.tiktok.com/@tiktok/live">
 <button onclick="setTiktokUsername()">設定</button>
+<button onclick="disconnectTiktok()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
 <div id="tiktokStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
 <div class="hint">TikTokはOBSを使わないため、キャプチャ用の別ウィンドウを開いてください（黒背景・ウィンドウキャプチャ用）</div>
 <button onclick="openTiktokWindow()" style="margin-top:6px">TikTokキャプチャ用ウィンドウを開く</button>
@@ -608,8 +610,10 @@
       const res = await fetch('/api/overlay/status');
       const data = await res.json();
       currentKickSlug = data.kickSlug || '';
+      const paused = data.fetchPaused || {};
       document.getElementById('status').innerHTML =
-        `配信ID: <b>${data.liveId || '未設定'}</b><br>取得済みコメント数: <b>${data.count}</b>`;
+        `配信ID: <b>${data.liveId || '未設定'}</b><br>取得済みコメント数: <b>${data.count}</b>` +
+        (paused.fw ? '<br><span style="color:#ff8080">⏸ ふわっちの取得を一時停止中</span>' : '');
 
       qzRender(data.quiz);
       goalRender(data);
@@ -620,7 +624,10 @@
 
       // Kick状態
       const kickStatusEl = document.getElementById('kickStatus');
-      if (data.kickSlug) {
+      if (paused.kick && data.kickSlug) {
+        kickStatusEl.textContent = `Kick接続を切断中(一時停止): ${data.kickSlug}`;
+        kickStatusEl.style.color = '#ff8080';
+      } else if (data.kickSlug) {
         kickStatusEl.textContent = data.kickConnected
           ? `Kick接続中: ${data.kickSlug}`
           : `Kick接続待ち: ${data.kickSlug}`;
@@ -632,7 +639,10 @@
 
       // TikTok状態
       const tiktokStatusEl = document.getElementById('tiktokStatus');
-      if (data.tiktokUsername) {
+      if (paused.tiktok && data.tiktokUsername) {
+        tiktokStatusEl.textContent = `TikTok接続を切断中(一時停止): @${data.tiktokUsername}`;
+        tiktokStatusEl.style.color = '#ff8080';
+      } else if (data.tiktokUsername) {
         tiktokStatusEl.textContent = data.tiktokConnected
           ? `TikTok接続中: @${data.tiktokUsername}（視聴数: ${data.tiktokViewerCount ?? '-'}）`
           : `TikTok接続待ち: @${data.tiktokUsername}`;
@@ -868,6 +878,44 @@
       msg.textContent = '通信エラー(サーバーが起動しているか確認)';
       msg.className = 'msg err';
     }
+  }
+
+  // ---------- 取得配信の接続を一旦切る ----------
+  async function disconnectMain() {
+    const msg = document.getElementById('msg');
+    try {
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: 'main' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        msg.textContent = 'ふわっち/Kickの接続を切りました(URLはそのまま。再開するにはもう一度「設定」を押してください)';
+        msg.className = 'msg ok';
+        refreshStatus();
+      }
+    } catch (e) {
+      msg.textContent = '通信エラー(サーバーが起動しているか確認)';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function disconnectTiktok() {
+    const msg = document.getElementById('tiktokStatus');
+    try {
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: 'tiktok' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        msg.textContent = 'TikTokの接続を切りました(ユーザー名はそのまま。再開するにはもう一度「設定」を押してください)';
+        msg.style.color = '#ff8080';
+        refreshStatus();
+      }
+    } catch (e) {}
   }
 
   // ---------- コメントソース切り替え(複数選択可) ----------
