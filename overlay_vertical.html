@@ -1010,26 +1010,49 @@
     if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)));
   }
 
-  // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、名前の前にプラットフォームごとの色付きドットを表示
+  // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、名前の前にプラットフォームロゴ風バッジを表示
   const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee' };
+  const PLATFORM_BADGE_TEXT = { fw: 'ふ', kick: 'K', tiktok: 'T' };
 
   function addEntry(c) {
     const el = document.createElement('div');
     el.className = 'c' + (c.isItem ? ' item' : '');
 
+    // バッジと名前を横並びにするための行コンテナ(.nameの display:block による
+    // 改行でバッジが名前の上に来てしまうのを防ぐ)
+    const nameRow = document.createElement('div');
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    nameRow.style.marginBottom = '2px';
+
     if (c.platform && PLATFORM_COLORS[c.platform]) {
-      const dot = document.createElement('span');
-      dot.textContent = '● ';
-      dot.style.color = PLATFORM_COLORS[c.platform];
-      dot.style.fontSize = '0.8em';
-      el.appendChild(dot);
+      const badge = document.createElement('span');
+      badge.textContent = PLATFORM_BADGE_TEXT[c.platform] || '?';
+      badge.style.display = 'inline-flex';
+      badge.style.flex = 'none';
+      badge.style.alignItems = 'center';
+      badge.style.justifyContent = 'center';
+      badge.style.width = '1.3em';
+      badge.style.height = '1.3em';
+      badge.style.marginRight = '0.35em';
+      badge.style.borderRadius = '5px';
+      badge.style.background = PLATFORM_COLORS[c.platform];
+      badge.style.color = '#0a0a0a';
+      badge.style.fontSize = '0.72em';
+      badge.style.fontWeight = '900';
+      badge.style.lineHeight = '1';
+      badge.style.boxShadow = '0 1px 3px rgba(0,0,0,0.5)';
+      nameRow.appendChild(badge);
     }
 
     const name = document.createElement('span');
     name.className = 'name';
+    name.style.display = 'inline';
+    name.style.marginBottom = '0';
     name.style.color = c.isItem ? '#ffd54f' : colorFromName(c.name);
     name.textContent = (c.isFollower ? '★ ' : '') + c.name;
-    el.appendChild(name);
+    nameRow.appendChild(name);
+    el.appendChild(nameRow);
 
     const text = document.createElement('div');
     text.className = 'text';
