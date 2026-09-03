@@ -99,6 +99,12 @@ function loadConfig() {
     if (typeof c.goalBaseline !== 'number') c.goalBaseline = 0;
     if (typeof c.geminiApiKey !== 'string') c.geminiApiKey = '';
     if (!['fw', 'kick', 'tiktok'].includes(c.commentSource)) c.commentSource = 'fw';
+    // コメント欄に流すプラットフォームは複数選択可(チェックボックス化)。旧形式(単一文字列)は配列に移行
+    if (!Array.isArray(c.commentSources) || !c.commentSources.every((s) => ['fw', 'kick', 'tiktok'].includes(s))) {
+      c.commentSources = [c.commentSource];
+    }
+    c.commentSources = [...new Set(c.commentSources)];
+    if (c.commentSources.length === 0) c.commentSources = [c.commentSource];
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
@@ -124,7 +130,7 @@ function loadConfig() {
     return c;
   } catch {
     return {
-      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', showFw: true, showKick: true, tiktokUsername: '',
+      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', commentSources: ['fw'], showFw: true, showKick: true, tiktokUsername: '',
       scheduleEnabled: true,
       scheduleDisplayWeek: '',
       scheduleByWeek: {},
@@ -1363,6 +1369,7 @@ check();
       topicVisible: config.topicVisible,
       hasApiKey: !!config.geminiApiKey,
       commentSource: config.commentSource,
+      commentSources: config.commentSources,
       showFw: config.showFw,
       showKick: config.showKick,
       tiktokUsername: config.tiktokUsername,
@@ -1457,9 +1464,21 @@ check();
     if (body.showKick !== undefined) { config.showKick = !!body.showKick; changed = true; }
 
     if (body.commentSource !== undefined) {
-      if (body.commentSource === 'fw' || body.commentSource === 'kick') {
+      if (['fw', 'kick', 'tiktok'].includes(body.commentSource)) {
         config.commentSource = body.commentSource;
         changed = true;
+      }
+    }
+
+    // コメント欄に流すプラットフォーム(複数選択可・チェックボックス)
+    if (body.commentSources !== undefined) {
+      if (Array.isArray(body.commentSources)) {
+        const valid = [...new Set(body.commentSources.filter((s) => ['fw', 'kick', 'tiktok'].includes(s)))];
+        if (valid.length > 0) {
+          config.commentSources = valid;
+          config.commentSource = valid[0]; // 後方互換用に先頭を反映
+          changed = true;
+        }
       }
     }
 
@@ -1611,11 +1630,11 @@ check();
     // ?platform= が指定されていればそちらを優先(TikTok用キャプチャウィンドウなど、
     // メインのOBSオーバーレイとは別のプラットフォームを同時に表示するため)
     const platformOverride = url.searchParams.get('platform');
-    const activeSource = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok')
-      ? platformOverride
-      : config.commentSource;
+    const activeSources = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok')
+      ? [platformOverride]
+      : (Array.isArray(config.commentSources) && config.commentSources.length ? config.commentSources : [config.commentSource]);
     const newComments = recentComments.filter(
-      (c) => c.id > afterId && (!c.platform || c.platform === activeSource)
+      (c) => c.id > afterId && (!c.platform || activeSources.includes(c.platform))
     );
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ comments: newComments, lastId: commentIdCounter }));
