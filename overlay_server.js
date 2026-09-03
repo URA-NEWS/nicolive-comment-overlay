@@ -467,7 +467,7 @@ function rouletteState() {
 
 // ---------- ふわっちポーリング ----------
 async function pollFwComments() {
-  if (!config.liveId) { fwViewerCount = null; fwLiveNow = false; return; }
+  if (!config.liveId || fetchPaused.fw) { fwViewerCount = null; fwLiveNow = false; return; }
   try {
     const url = `https://api.whowatch.tv/lives/${config.liveId}?last_updated_at=${fwLastUpdated}`;
     const res = await fetch(url, {
@@ -831,6 +831,9 @@ let kickTokenExpiresAt = 0;
 let kickWs = null;
 let kickReconnectTimer = null;
 let kickChatroomId = null;
+// ドックの「接続を切る」ボタンで一旦取得を止めるためのフラグ(config永続化はしない=一時的な状態)。
+// 再度「設定」ボタンでURL/ユーザー名を送信すると解除されて再接続する。
+const fetchPaused = { fw: false, kick: false, tiktok: false };
 
 async function getKickAccessToken() {
   if (kickAccessToken && Date.now() < kickTokenExpiresAt - 30000) return kickAccessToken;
@@ -947,6 +950,7 @@ async function getKickChatroomId(slug) {
 }
 
 async function connectKickChat(slug) {
+  if (fetchPaused.kick) return;
   if (!slug && !config.kickChatroomId) return;
   if (kickWs) { try { kickWs.destroy(); } catch {} kickWs = null; }
   clearTimeout(kickReconnectTimer);
@@ -960,7 +964,7 @@ async function connectKickChat(slug) {
   }
   if (!chatroomId) {
     console.error('[Kick] chatroomId取得失敗。60秒後にリトライ');
-    kickReconnectTimer = setTimeout(() => connectKickChat(slug), 60000);
+    if (!fetchPaused.kick) kickReconnectTimer = setTimeout(() => connectKickChat(slug), 60000);
     return;
   }
   kickChatroomId = chatroomId;
@@ -1108,7 +1112,7 @@ async function connectKickChat(slug) {
     console.log('[Kick] Pusher切断。30秒後にリトライ...');
     if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
     if (kickWs === socket) kickWs = null;
-    if (config.kickSlug || config.kickChatroomId) {
+    if (!fetchPaused.kick && (config.kickSlug || config.kickChatroomId)) {
       kickReconnectTimer = setTimeout(() => connectKickChat(config.kickSlug), 30000);
     }
   });
@@ -1153,7 +1157,7 @@ let tiktokViewerCount = null;
 let tiktokConnected = false;
 
 async function connectTikTok(username) {
-  if (!username) return;
+  if (!username || fetchPaused.tiktok) return;
   try {
     await loadTikTokLib();
   } catch (e) {
@@ -1202,7 +1206,7 @@ async function connectTikTok(username) {
     tiktokConnected = false;
     console.log('[TikTok] 切断。30秒後に再接続');
     clearTimeout(tiktokReconnectTimer);
-    tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
+    if (!fetchPaused.tiktok) tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
   });
 
   conn.on('error', (e) => {
@@ -1217,7 +1221,7 @@ async function connectTikTok(username) {
     tiktokConnected = false;
     console.error('[TikTok] 接続失敗:', e.message);
     clearTimeout(tiktokReconnectTimer);
-    tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
+    if (!fetchPaused.tiktok) tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
   }
 }
 
@@ -1375,6 +1379,7 @@ check();
       tiktokUsername: config.tiktokUsername,
       tiktokConnected,
       tiktokViewerCount,
+      fetchPaused,
       goal: (config.goalVisible && config.goalTarget > 0) ? {
         target: config.goalTarget,
         rate: config.goalRate,
@@ -1420,6 +1425,7 @@ check();
       }
       const changingLive = liveId !== config.liveId;
       config.liveId = liveId;
+      fetchPaused.fw = false;
       if (changingLive) {
         fwLastUpdated = 0;
         recentComments = [];
@@ -1574,11 +1580,13 @@ check();
     if (body.kickSlug !== undefined) {
       const slug = String(body.kickSlug).trim().replace(/^https?:\/\/kick\.com\//i, '').replace(/\/$/, '');
       const changingSlug = slug !== config.kickSlug;
+      const wasPaused = fetchPaused.kick;
       config.kickSlug = slug;
+      fetchPaused.kick = false;
       if (changingSlug) config.kickChatroomId = ''; // チャンネルが変わったら古いIDは破棄
       changed = true;
       if (slug) {
-        if (changingSlug) connectKickChat(slug);
+        if (changingSlug || wasPaused) connectKickChat(slug);
       } else {
         disconnectKick();
       }
@@ -1590,13 +1598,31 @@ check();
         .replace(/\/live\/?$/i, '')
         .replace(/^@/, '');
       const changingUname = uname !== config.tiktokUsername;
+      const wasPaused = fetchPaused.tiktok;
       config.tiktokUsername = uname;
+      fetchPaused.tiktok = false;
       changed = true;
       if (uname) {
-        if (changingUname) connectTikTok(uname);
+        if (changingUname || wasPaused) connectTikTok(uname);
       } else {
         disconnectTikTok();
       }
+    }
+
+    // ---- 取得配信を一旦切断(URL/ユーザー名は保持したまま接続だけ止める) ----
+    if (body.disconnect !== undefined) {
+      if (body.disconnect === 'main') {
+        // 「配信URL」欄が対象にしているふわっち/Kick両方を停止
+        fetchPaused.fw = true;
+        fetchPaused.kick = true;
+        disconnectKick();
+      } else if (body.disconnect === 'tiktok') {
+        fetchPaused.tiktok = true;
+        disconnectTikTok();
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, fetchPaused }));
+      return;
     }
 
     if (changed) saveConfig(config);
