@@ -1010,9 +1010,20 @@
     if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、名前の前にプラットフォームごとの色付きドットを表示
+  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee' };
+
   function addEntry(c) {
     const el = document.createElement('div');
     el.className = 'c' + (c.isItem ? ' item' : '');
+
+    if (c.platform && PLATFORM_COLORS[c.platform]) {
+      const dot = document.createElement('span');
+      dot.textContent = '● ';
+      dot.style.color = PLATFORM_COLORS[c.platform];
+      dot.style.fontSize = '0.8em';
+      el.appendChild(dot);
+    }
 
     const name = document.createElement('span');
     name.className = 'name';
