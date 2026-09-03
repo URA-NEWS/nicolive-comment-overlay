@@ -1104,9 +1104,15 @@
     if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、プラットフォームごとに文字色を変える
+  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee' };
+
   function spawnComment(c) {
     const el = document.createElement('div');
     el.className = 'comment' + (c.isItem ? ' item' : '');
+    if (!c.isItem && c.platform && PLATFORM_COLORS[c.platform]) {
+      el.style.color = PLATFORM_COLORS[c.platform];
+    }
 
     let fontSize = MIN_FONT + Math.floor(Math.random() * (MAX_FONT - MIN_FONT + 1));
     if (c.isItem) fontSize += ITEM_FONT_BONUS;
