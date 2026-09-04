@@ -95,6 +95,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/kokuhatsu-question' && req.method === 'GET') {
+    serve(res, 'kokuhatsu_question.html');
+    return;
+  }
+
+  if (url.pathname === '/kokuhatsu-amida' && req.method === 'GET') {
+    serve(res, 'kokuhatsu_amida.html');
+    return;
+  }
+
   if (url.pathname === '/api/kokuhatsu/state' && req.method === 'GET') {
     const survey = await fetchExistingStatus();
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
