@@ -24,6 +24,7 @@ button{border:0;border-radius:4px;background:#d8b65a;color:#111;padding:9px 12px
 </div>
 <label>確定ルート<input id="route" placeholder="例: A-C-B-A-C-B"></label>
 <label>隠しキーワード<input id="keyword" placeholder="例: コクハツ"></label>
+<label>OBS表示<select id="viewMode"><option value="question">問題表示</option><option value="amida">アミダ進行</option><option value="all">全体表示</option></select></label>
 
 <h2>本日の問題</h2>
 <label>問題文<textarea id="question"></textarea></label>
@@ -53,10 +54,10 @@ button{border:0;border-radius:4px;background:#d8b65a;color:#111;padding:9px 12px
 let latest=null;
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return r.json();}
 function routeArray(){return document.getElementById('route').value.trim().toUpperCase().split('-').map(s=>s.trim()).filter(Boolean).slice(0,6)}
-function fill(s){latest=s;document.getElementById('day').value=s.day;document.getElementById('misses').value=s.misses;document.getElementById('route').value=(s.route||[]).join('-');document.getElementById('keyword').value=s.keyword||'';document.getElementById('question').value=s.question||'';document.getElementById('choiceA').value=s.choices?.A||'';document.getElementById('choiceB').value=s.choices?.B||'';document.getElementById('choiceC').value=s.choices?.C||'';document.getElementById('correct').value=s.correct||'';document.getElementById('ticker').value=s.ticker||'';document.getElementById('revealResult').checked=Boolean(s.revealResult);renderStatus(s)}
+function fill(s){latest=s;document.getElementById('day').value=s.day;document.getElementById('misses').value=s.misses;document.getElementById('route').value=(s.route||[]).join('-');document.getElementById('keyword').value=s.keyword||'';document.getElementById('viewMode').value=s.viewMode||'question';document.getElementById('question').value=s.question||'';document.getElementById('choiceA').value=s.choices?.A||'';document.getElementById('choiceB').value=s.choices?.B||'';document.getElementById('choiceC').value=s.choices?.C||'';document.getElementById('correct').value=s.correct||'';document.getElementById('ticker').value=s.ticker||'';document.getElementById('revealResult').checked=Boolean(s.revealResult);renderStatus(s)}
 function renderStatus(s){const sv=s.survey;const m=s.majority||'-';let html=`賞金: <b>${s.prize}万円</b> / ミス: <b>${s.misses}</b> / 多数派: <b>${m}</b>`;if(sv){html+=`<br>投票: ${sv.active?'受付中':'締切済み'} / 残り ${sv.remainSec||0}秒 / 合計 ${sv.total}票<br>`+sv.results.map(r=>`${r.key}: ${r.count}票(${r.pct}%)`).join(' / ')}else{html+='<br>投票なし'}document.getElementById('status').innerHTML=html}
 async function load(){const s=await api('/api/kokuhatsu/state');if(!latest)fill(s);else renderStatus(s);latest=s}
-async function save(){await api('/api/kokuhatsu/state',{day:day.value,misses:misses.value,route:routeArray(),keyword:keyword.value,question:question.value,choices:{A:choiceA.value,B:choiceB.value,C:choiceC.value},correct:correct.value,revealResult:revealResult.checked,ticker:ticker.value});load()}
+async function save(){await api('/api/kokuhatsu/state',{day:day.value,misses:misses.value,route:routeArray(),keyword:keyword.value,viewMode:viewMode.value,question:question.value,choices:{A:choiceA.value,B:choiceB.value,C:choiceC.value},correct:correct.value,revealResult:revealResult.checked,ticker:ticker.value});load()}
 async function startSurvey(){await save();await api('/api/kokuhatsu/survey/start',{duration:duration.value});load()}
 async function stopSurvey(){await api('/api/kokuhatsu/survey/stop',{});load()}
 async function clearSurvey(){await api('/api/kokuhatsu/survey/clear',{});load()}
