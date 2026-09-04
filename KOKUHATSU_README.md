@@ -12,10 +12,22 @@
 http://localhost:3942/kokuhatsu-dock
 ```
 
-4. OBSのブラウザソースに配信用オーバーレイを追加します。
+4. OBSのブラウザソースに、用途に合わせて配信用オーバーレイを追加します。
 
 ```text
 http://localhost:3942/kokuhatsu-overlay
+```
+
+問題だけを出す画面：
+
+```text
+http://localhost:3942/kokuhatsu-question
+```
+
+アミダと賞金進行だけを出す画面：
+
+```text
+http://localhost:3942/kokuhatsu-amida
 ```
 
 ## 運用
