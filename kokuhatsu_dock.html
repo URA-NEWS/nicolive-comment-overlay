@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>告発ゲーム 運営ドック</title>
+<style>
+body{margin:0;padding:16px;background:#0b0b0d;color:#eee;font-family:"Yu Gothic UI","Meiryo",sans-serif;font-size:14px}
+h1{font-size:18px;margin:0 0 12px;color:#d8b65a}h2{font-size:14px;margin:18px 0 8px;color:#d8b65a;border-top:1px solid #333;padding-top:12px}
+label{display:block;color:#aaa;margin:8px 0 4px}input,select,textarea{box-sizing:border-box;width:100%;padding:9px;background:#151518;border:1px solid #3a3a40;color:#fff;border-radius:4px;font:inherit}
+textarea{min-height:72px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.choice{display:grid;grid-template-columns:32px 1fr;gap:8px;align-items:center;margin:6px 0}
+button{border:0;border-radius:4px;background:#d8b65a;color:#111;padding:9px 12px;font-weight:700;cursor:pointer;margin-top:8px}.sub{color:#888;font-size:12px;line-height:1.6}
+.danger{background:#b91f2c;color:#fff}.ghost{background:#333;color:#eee}.stat{background:#151518;border:1px solid #333;border-radius:6px;padding:10px;margin-top:10px;line-height:1.7}
+</style>
+</head>
+<body>
+<h1>告発ゲーム 運営ドック</h1>
+<div class="sub">既存コメントサーバーのアンケート集計を使い、告発ゲーム専用オーバーレイだけを操作します。</div>
+
+<h2>進行</h2>
+<div class="row">
+  <label>Day<select id="day"><option value="7">Day 7 告知</option><option value="6">Day 6</option><option value="5">Day 5</option><option value="4">Day 4</option><option value="3">Day 3</option><option value="2">Day 2</option><option value="1">Day 1</option><option value="0">Final Day</option></select></label>
+  <label>ミス回数<input id="misses" type="number" min="0" max="6" value="0"></label>
+</div>
+<label>確定ルート<input id="route" placeholder="例: A-C-B-A-C-B"></label>
+<label>隠しキーワード<input id="keyword" placeholder="例: コクハツ"></label>
+
+<h2>本日の問題</h2>
+<label>問題文<textarea id="question"></textarea></label>
+<div class="choice"><b>A</b><input id="choiceA"></div>
+<div class="choice"><b>B</b><input id="choiceB"></div>
+<div class="choice"><b>C</b><input id="choiceC"></div>
+<div class="row">
+  <label>正解<select id="correct"><option value="">未設定</option><option>A</option><option>B</option><option>C</option></select></label>
+  <label>投票時間（秒）<input id="duration" type="number" min="10" max="7200" value="300"></label>
+</div>
+<label><input id="revealResult" type="checkbox" style="width:auto;margin-right:8px">結果を配信画面に公開する</label>
+
+<button onclick="save()">保存して表示反映</button>
+<button onclick="startSurvey()">投票開始</button>
+<button class="ghost" onclick="stopSurvey()">締切</button>
+<button class="danger" onclick="clearSurvey()">投票非表示</button>
+<button class="ghost" onclick="applyMajority()">多数派をルートに追加</button>
+<button class="ghost" onclick="revealNow()">結果公開</button>
+
+<h2>表示文言</h2>
+<label>下部テロップ<input id="ticker"></label>
+<button onclick="save()">保存</button>
+
+<div class="stat" id="status">読み込み中</div>
+
+<script>
+let latest=null;
+async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return r.json();}
+function routeArray(){return document.getElementById('route').value.trim().toUpperCase().split('-').map(s=>s.trim()).filter(Boolean).slice(0,6)}
+function fill(s){latest=s;document.getElementById('day').value=s.day;document.getElementById('misses').value=s.misses;document.getElementById('route').value=(s.route||[]).join('-');document.getElementById('keyword').value=s.keyword||'';document.getElementById('question').value=s.question||'';document.getElementById('choiceA').value=s.choices?.A||'';document.getElementById('choiceB').value=s.choices?.B||'';document.getElementById('choiceC').value=s.choices?.C||'';document.getElementById('correct').value=s.correct||'';document.getElementById('ticker').value=s.ticker||'';document.getElementById('revealResult').checked=Boolean(s.revealResult);renderStatus(s)}
+function renderStatus(s){const sv=s.survey;const m=s.majority||'-';let html=`賞金: <b>${s.prize}万円</b> / ミス: <b>${s.misses}</b> / 多数派: <b>${m}</b>`;if(sv){html+=`<br>投票: ${sv.active?'受付中':'締切済み'} / 残り ${sv.remainSec||0}秒 / 合計 ${sv.total}票<br>`+sv.results.map(r=>`${r.key}: ${r.count}票(${r.pct}%)`).join(' / ')}else{html+='<br>投票なし'}document.getElementById('status').innerHTML=html}
+async function load(){const s=await api('/api/kokuhatsu/state');if(!latest)fill(s);else renderStatus(s);latest=s}
+async function save(){await api('/api/kokuhatsu/state',{day:day.value,misses:misses.value,route:routeArray(),keyword:keyword.value,question:question.value,choices:{A:choiceA.value,B:choiceB.value,C:choiceC.value},correct:correct.value,revealResult:revealResult.checked,ticker:ticker.value});load()}
+async function startSurvey(){await save();await api('/api/kokuhatsu/survey/start',{duration:duration.value});load()}
+async function stopSurvey(){await api('/api/kokuhatsu/survey/stop',{});load()}
+async function clearSurvey(){await api('/api/kokuhatsu/survey/clear',{});load()}
+async function applyMajority(){await load();if(!latest||!latest.majority||latest.majority==='TIE')return;const r=routeArray();r.push(latest.majority);route.value=r.slice(0,6).join('-');if(correct.value&&latest.majority!==correct.value)misses.value=Math.min(6,Number(misses.value||0)+1);revealResult.checked=true;await save()}
+async function revealNow(){revealResult.checked=true;await save()}
+load();setInterval(load,1000);
+</script>
+</body>
+</html>
