@@ -17,6 +17,7 @@ const defaultState = {
   misses: 0,
   prize: 100,
   revealResult: false,
+  viewMode: 'question',
   ticker: '先着順ではありません。正解者から抽選で1名。',
 };
 
@@ -78,6 +79,11 @@ function serve(res, file) {
   res.end(html);
 }
 
+function upstreamUnavailable(res) {
+  res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ error: '既存コメントサーバーが起動していません' }));
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -120,6 +126,7 @@ const server = http.createServer(async (req, res) => {
       choices: { ...state.choices, ...(body.choices || {}) },
       route: Array.isArray(body.route) ? body.route.slice(0, 6) : state.route,
       misses: Math.min(6, Math.max(0, Number(body.misses ?? state.misses) || 0)),
+      viewMode: ['question', 'amida', 'all'].includes(body.viewMode) ? body.viewMode : state.viewMode,
       question: String(body.question ?? state.question).slice(0, 500),
       keyword: String(body.keyword ?? state.keyword).slice(0, 12),
       ticker: String(body.ticker ?? state.ticker).slice(0, 120),
@@ -135,30 +142,42 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const duration = Math.min(7200, Math.max(10, Number(body.duration) || 300));
     const options = [state.choices.A, state.choices.B, state.choices.C];
-    const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ options, duration }),
-    });
-    const payload = await upstream.text();
-    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-    res.end(payload);
+    try {
+      const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ options, duration }),
+      });
+      const payload = await upstream.text();
+      res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+      res.end(payload);
+    } catch {
+      upstreamUnavailable(res);
+    }
     return;
   }
 
   if (url.pathname === '/api/kokuhatsu/survey/stop' && req.method === 'POST') {
-    const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/stop`, { method: 'POST' });
-    const payload = await upstream.text();
-    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-    res.end(payload);
+    try {
+      const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/stop`, { method: 'POST' });
+      const payload = await upstream.text();
+      res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+      res.end(payload);
+    } catch {
+      upstreamUnavailable(res);
+    }
     return;
   }
 
   if (url.pathname === '/api/kokuhatsu/survey/clear' && req.method === 'POST') {
-    const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/clear`, { method: 'POST' });
-    const payload = await upstream.text();
-    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-    res.end(payload);
+    try {
+      const upstream = await fetch(`${OVERLAY_BASE}/api/overlay/survey/clear`, { method: 'POST' });
+      const payload = await upstream.text();
+      res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+      res.end(payload);
+    } catch {
+      upstreamUnavailable(res);
+    }
     return;
   }
 
