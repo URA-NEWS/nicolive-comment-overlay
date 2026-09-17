@@ -43,8 +43,10 @@
   }
   .fw-label { color: #ff8c1a; text-shadow: 0 0 10px rgba(255,140,26,0.5); }
   .kick-label { color: #53fc18; text-shadow: 0 0 10px rgba(83,252,24,0.5); }
+  .twitcas-label { color: #00a8ff; text-shadow: 0 0 10px rgba(0,168,255,0.5); }
   /* 行間に区切り線 */
   #kickBar.on { border-top: 1px solid rgba(255,255,255,0.08); margin-top: 2px; padding-top: 2px; }
+  #twitcasBar.on { border-top: 1px solid rgba(255,255,255,0.08); margin-top: 2px; padding-top: 2px; }
   #statsBar {
     position: fixed;
     top: 0;
@@ -90,6 +92,10 @@
     background: #53fc18;
     box-shadow: 0 0 10px #53fc18, 0 0 20px rgba(83,252,24,0.5);
   }
+  .stat.twitcas .dot {
+    background: #00a8ff;
+    box-shadow: 0 0 10px #00a8ff, 0 0 20px rgba(0,168,255,0.5);
+  }
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.55; transform: scale(0.82); }
@@ -107,6 +113,10 @@
   .stat.kick .label {
     color: #53fc18;
     text-shadow: 0 0 12px rgba(83,252,24,0.45);
+  }
+  .stat.twitcas .label {
+    color: #00a8ff;
+    text-shadow: 0 0 12px rgba(0,168,255,0.45);
   }
   .stat .num {
     font-size: 25px;
@@ -901,6 +911,11 @@
     <div class="stat kick" id="statKickF"><span class="dot"></span><span class="txt"><span class="label">FOLLOWERS</span><span class="num"></span></span></div>
     <div class="stat kick" id="statKickV"><span class="dot"></span><span class="txt"><span class="label">VIEWERS</span><span class="num"></span></span></div>
   </div>
+  <div id="twitcasBar" class="bar-row">
+    <div class="plat-label twitcas-label">ツイキャス</div>
+    <div class="stat twitcas" id="statTwitcasF"><span class="dot"></span><span class="txt"><span class="label">SUPPORTERS</span><span class="num"></span></span></div>
+    <div class="stat twitcas" id="statTwitcasV"><span class="dot"></span><span class="txt"><span class="label">VIEWERS</span><span class="num"></span></span></div>
+  </div>
 </div>
   <div class="stat" id="statFwF"><span class="dot"></span><span class="txt"><span class="label">FOLLOWERS</span><span class="num"></span></span></div>
   <div class="stat" id="statFwV"><span class="dot"></span><span class="txt"><span class="label">VIEWERS</span><span class="num"></span></span></div>
@@ -1105,7 +1120,7 @@
   }
 
   // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、プラットフォームごとに文字色を変える
-  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee' };
+  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee', twitcas: '#00a8ff' };
 
   function spawnComment(c) {
     const el = document.createElement('div');
@@ -1190,13 +1205,17 @@
   function refreshRows(data) {
     const fwBar = document.getElementById('fwBar');
     const kickBar = document.getElementById('kickBar');
+    const twitcasBar = document.getElementById('twitcasBar');
     const statsBar = document.getElementById('statsBar');
     const fwShow = data.showFw === true;
     const kickShow = data.showKick === true;
+    const twitcasShow = data.showTwitcas === true;
     fwBar.classList.toggle('on', fwShow);
     kickBar.classList.toggle('on', kickShow);
+    twitcasBar.classList.toggle('on', twitcasShow);
     kickBar.style.borderTop = kickShow ? '1px solid rgba(255,255,255,0.08)' : '';
-    statsBar.style.display = (fwShow || kickShow) ? 'flex' : 'none';
+    twitcasBar.style.borderTop = twitcasShow ? '1px solid rgba(255,255,255,0.08)' : '';
+    statsBar.style.display = (fwShow || kickShow || twitcasShow) ? 'flex' : 'none';
   }
 
   function updateStats(data) {
@@ -1204,6 +1223,8 @@
     setStat('statFwV', data.fwViewerCount);
     setStat('statKickF', data.kickFollowerCount);
     setStat('statKickV', data.kickViewerCount);
+    setStat('statTwitcasF', data.twitcastingSupporterCount);
+    setStat('statTwitcasV', data.twitcastingViewerCount);
     refreshRows(data);
     updateSurvey(data.survey);
     updateTopic(data.topic);
