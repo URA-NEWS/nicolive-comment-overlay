@@ -11,6 +11,8 @@
 //   KICK_CLIENT_ID     - Kick Developer APIのクライアントID
 //   KICK_CLIENT_SECRET - Kick Developer APIのクライアントシークレット
 //   GEMINI_API_KEY     - Gemini APIキー(未設定でもドックUIから設定可)
+//   TWITCASTING_CLIENT_ID     - ツイキャス APIv2のクライアントID(アプリ登録して取得)
+//   TWITCASTING_CLIENT_SECRET - ツイキャス APIv2のクライアントシークレット
 // ============================================================
 
 const http = require('http');
@@ -56,6 +58,8 @@ const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl';
 // Kick API認証情報(環境変数から取得。Renderの環境変数 or ローカルの.envに設定)
 const KICK_CLIENT_ID = process.env.KICK_CLIENT_ID || '';
 const KICK_CLIENT_SECRET = process.env.KICK_CLIENT_SECRET || '';
+const TWITCASTING_CLIENT_ID = process.env.TWITCASTING_CLIENT_ID || '';
+const TWITCASTING_CLIENT_SECRET = process.env.TWITCASTING_CLIENT_SECRET || '';
 
 // ---------- config ----------
 // 配信スケジュールは「週(月曜日付=YYYY-MM-DD)ごと」に内容を保持する。
@@ -98,16 +102,18 @@ function loadConfig() {
     if (typeof c.goalVisible !== 'boolean') c.goalVisible = false;
     if (typeof c.goalBaseline !== 'number') c.goalBaseline = 0;
     if (typeof c.geminiApiKey !== 'string') c.geminiApiKey = '';
-    if (!['fw', 'kick', 'tiktok'].includes(c.commentSource)) c.commentSource = 'fw';
+    if (!['fw', 'kick', 'tiktok', 'twitcas'].includes(c.commentSource)) c.commentSource = 'fw';
     // コメント欄に流すプラットフォームは複数選択可(チェックボックス化)。旧形式(単一文字列)は配列に移行
-    if (!Array.isArray(c.commentSources) || !c.commentSources.every((s) => ['fw', 'kick', 'tiktok'].includes(s))) {
+    if (!Array.isArray(c.commentSources) || !c.commentSources.every((s) => ['fw', 'kick', 'tiktok', 'twitcas'].includes(s))) {
       c.commentSources = [c.commentSource];
     }
     c.commentSources = [...new Set(c.commentSources)];
     if (c.commentSources.length === 0) c.commentSources = [c.commentSource];
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
+    if (typeof c.showTwitcas !== 'boolean') c.showTwitcas = true;
     if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
+    if (typeof c.twitcastingUser !== 'string') c.twitcastingUser = '';
     if (typeof c.scheduleEnabled !== 'boolean') c.scheduleEnabled = true;
     // ''(または不正値) = 自動(実際の今週を表示)。"YYYY-MM-DD"(月曜日付) = その週を強制的に表示(下書きプレビュー用)
     if (typeof c.scheduleDisplayWeek !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(c.scheduleDisplayWeek)) c.scheduleDisplayWeek = '';
@@ -130,7 +136,7 @@ function loadConfig() {
     return c;
   } catch {
     return {
-      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', commentSources: ['fw'], showFw: true, showKick: true, tiktokUsername: '',
+      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', commentSources: ['fw'], showFw: true, showKick: true, showTwitcas: true, tiktokUsername: '', twitcastingUser: '',
       scheduleEnabled: true,
       scheduleDisplayWeek: '',
       scheduleByWeek: {},
@@ -214,6 +220,7 @@ function addComment(obj) {
     if (obj.platform === 'fw') currentCommentTick.fw++;
     else if (obj.platform === 'kick') currentCommentTick.kick++;
     else if (obj.platform === 'tiktok') currentCommentTick.tiktok++;
+    else if (obj.platform === 'twitcas') currentCommentTick.twitcas++;
   }
   commentIdCounter++;
   recentComments.push({ id: commentIdCounter, ts: Date.now(), ...obj });
@@ -648,7 +655,7 @@ function toJstDateStr(ms) {
 let currentStream = null;    // 進行中の配信レコード(stats.streamsの末尾要素への参照)
 let statsOfflineTicks = 0;
 let statsPaused = false;     // ドックの「計測を停止」スイッチ。trueの間は自動開始/終了判定を止める
-let currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0 }; // 直近1分間のコメント/ギフト等の件数(プラットフォーム別・addCommentでカウント)
+let currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0, twitcas: 0 }; // 直近1分間のコメント/ギフト等の件数(プラットフォーム別・addCommentでカウント)
 
 // サーバー再起動/redeployで正常終了できなかった配信記録が残っていたら、その時点で確定させる
 (function recoverUnfinishedStream() {
@@ -705,9 +712,10 @@ function statsTick() {
       fw: currentCommentTick.fw,
       kick: currentCommentTick.kick,
       tiktok: currentCommentTick.tiktok,
+      twitcas: currentCommentTick.twitcas,
     });
     if (currentStream.commentBuckets.length > 1000) currentStream.commentBuckets = currentStream.commentBuckets.slice(-1000);
-    currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0 };
+    currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0, twitcas: 0 };
   }
   if (statsPaused) return; // 手動停止中は自動開始/終了判定を行わない
   // 表示用のfwViewerCount/kickViewerCountは配信終了直後も直近値を保持することがあるため、
@@ -833,7 +841,7 @@ let kickReconnectTimer = null;
 let kickChatroomId = null;
 // ドックの「接続を切る」ボタンで一旦取得を止めるためのフラグ(config永続化はしない=一時的な状態)。
 // 再度「設定」ボタンでURL/ユーザー名を送信すると解除されて再接続する。
-const fetchPaused = { fw: false, kick: false, tiktok: false };
+const fetchPaused = { fw: false, kick: false, tiktok: false, twitcas: false };
 
 async function getKickAccessToken() {
   if (kickAccessToken && Date.now() < kickTokenExpiresAt - 30000) return kickAccessToken;
@@ -1237,6 +1245,146 @@ if (config.tiktokUsername) {
 }
 
 // ============================================================
+// ツイキャス対応 (公式APIv2、アプリ単位のBasic認証。ユーザーOAuh不要)
+// ============================================================
+let twitcastingMovieId = null;   // 現在配信中のmovie ID(未配信時はnull)
+let twitcastingSliceId = null;   // 直近まで取得済みのコメントID(差分取得の起点。nullなら未取得)
+let twitcastingViewerCount = null;
+let twitcastingSupporterCount = null; // ふわっち/Kickの「フォロワー数」に相当。ツイキャスAPIはsupporter_count(サポーター数)のみ公開
+let twitcastingLiveNow = false;
+let twitcastingLastLiveCheck = 0;
+const TC_LIVE_CHECK_INTERVAL_MS = 20000; // 配信中かどうかのチェックは20秒おき(APIレート制限対策)
+
+function twitcastingAuthHeaders() {
+  if (!TWITCASTING_CLIENT_ID || !TWITCASTING_CLIENT_SECRET) return null;
+  const token = Buffer.from(`${TWITCASTING_CLIENT_ID}:${TWITCASTING_CLIENT_SECRET}`).toString('base64');
+  return {
+    'Authorization': `Basic ${token}`,
+    'X-Api-Version': '2.0',
+    'Accept': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  };
+}
+
+let twitcastingWarnedNoKey = false;
+
+async function pollTwitCastingComments() {
+  if (!config.twitcastingUser || fetchPaused.twitcas) {
+    twitcastingViewerCount = null;
+    twitcastingLiveNow = false;
+    return;
+  }
+  const headers = twitcastingAuthHeaders();
+  if (!headers) {
+    if (!twitcastingWarnedNoKey) {
+      console.error('[TwitCasting] TWITCASTING_CLIENT_ID/SECRET未設定のため取得できません');
+      twitcastingWarnedNoKey = true;
+    }
+    return;
+  }
+  try {
+    const now = Date.now();
+    // 配信中かどうか・movieIdの確認は一定間隔のみ(未配信中はこのチェックだけでコメント取得は行わない)
+    if (!twitcastingMovieId || now - twitcastingLastLiveCheck >= TC_LIVE_CHECK_INTERVAL_MS) {
+      twitcastingLastLiveCheck = now;
+      const res = await fetch(`https://apiv2.twitcasting.tv/users/${encodeURIComponent(config.twitcastingUser)}/current_live`, { headers });
+      if (res.status === 404) {
+        if (twitcastingMovieId) console.log('[TwitCasting] 配信終了を検知');
+        twitcastingMovieId = null;
+        twitcastingSliceId = null;
+        twitcastingLiveNow = false;
+        twitcastingViewerCount = null;
+        return;
+      }
+      if (!res.ok) {
+        console.error('[TwitCasting] current_live HTTP', res.status, (await res.text()).slice(0, 200));
+        return;
+      }
+      const d = await res.json();
+      const movie = d.movie;
+      if (!movie || !movie.id) {
+        twitcastingLiveNow = false;
+        return;
+      }
+      twitcastingLiveNow = true;
+      if (Number.isFinite(Number(movie.current_view_count))) {
+        twitcastingViewerCount = Number(movie.current_view_count);
+      }
+      if (String(movie.id) !== String(twitcastingMovieId)) {
+        console.log(`[TwitCasting] 配信検知: movieId=${movie.id}`);
+        twitcastingMovieId = movie.id;
+        twitcastingSliceId = null; // 新しい配信なのでコメント取得の起点をリセット
+      }
+    }
+
+    if (!twitcastingMovieId) return;
+
+    // コメント取得(slice_idで前回取得以降の新着のみを取る)
+    const params = new URLSearchParams({ limit: '50', sort: 'old-to-new' });
+    if (twitcastingSliceId) params.set('slice_id', String(twitcastingSliceId));
+    const cres = await fetch(`https://apiv2.twitcasting.tv/movies/${twitcastingMovieId}/comments?${params.toString()}`, { headers });
+    if (!cres.ok) {
+      console.error('[TwitCasting] comments HTTP', cres.status, (await cres.text()).slice(0, 200));
+      return;
+    }
+    const cd = await cres.json();
+    const comments = cd.comments || [];
+    if (comments.length === 0) return;
+
+    if (twitcastingSliceId === null) {
+      // 初回取得時は既存コメントを一気に「新着」として流さず、以降の差分取得の起点だけ作る
+      const maxId = comments.reduce((m, c) => (Number(c.id) > m ? Number(c.id) : m), 0);
+      twitcastingSliceId = maxId || null;
+      return;
+    }
+
+    for (const c of comments) {
+      addComment({
+        name: c.from_user?.name || c.from_user?.screen_id || '?',
+        text: c.message || '',
+        isItem: false,
+        itemLabel: null,
+        itemCount: 1,
+        itemData: null,
+        platform: 'twitcas',
+      });
+    }
+    const maxId = comments.reduce((m, c) => (Number(c.id) > m ? Number(c.id) : m), Number(twitcastingSliceId) || 0);
+    twitcastingSliceId = maxId;
+  } catch (e) {
+    console.error('[TwitCastingポーリング エラー]', e.message);
+  }
+}
+setInterval(pollTwitCastingComments, 6000);
+
+// サポーター数(ふわっち/Kickのフォロワー数に相当する表示枠)は配信中かどうかに関わらず一定間隔で取得
+async function pollTwitCastingSupporterCount() {
+  if (!config.twitcastingUser || fetchPaused.twitcas) { twitcastingSupporterCount = null; return; }
+  const headers = twitcastingAuthHeaders();
+  if (!headers) return;
+  try {
+    const res = await fetch(`https://apiv2.twitcasting.tv/users/${encodeURIComponent(config.twitcastingUser)}`, { headers });
+    if (!res.ok) return;
+    const d = await res.json();
+    const count = Number(d.user?.supporter_count);
+    if (Number.isFinite(count) && count >= 0) twitcastingSupporterCount = count;
+  } catch (e) {
+    console.error('[TwitCastingサポーター数 エラー]', e.message);
+  }
+}
+setInterval(pollTwitCastingSupporterCount, 30000);
+setTimeout(pollTwitCastingSupporterCount, 3000);
+
+function disconnectTwitCasting() {
+  twitcastingMovieId = null;
+  twitcastingSliceId = null;
+  twitcastingLiveNow = false;
+  twitcastingViewerCount = null;
+  twitcastingSupporterCount = null;
+  console.log('[TwitCasting] 切断');
+}
+
+// ============================================================
 // AIトークテーマ生成 (Gemini)
 // ============================================================
 const GEMINI_MODEL = 'gemini-2.5-flash-lite';
@@ -1376,9 +1524,14 @@ check();
       commentSources: config.commentSources,
       showFw: config.showFw,
       showKick: config.showKick,
+      showTwitcas: config.showTwitcas,
       tiktokUsername: config.tiktokUsername,
       tiktokConnected,
       tiktokViewerCount,
+      twitcastingUser: config.twitcastingUser,
+      twitcastingConnected: twitcastingLiveNow,
+      twitcastingViewerCount,
+      twitcastingSupporterCount,
       fetchPaused,
       goal: (config.goalVisible && config.goalTarget > 0) ? {
         target: config.goalTarget,
@@ -1468,9 +1621,10 @@ check();
 
     if (body.showFw !== undefined) { config.showFw = !!body.showFw; changed = true; }
     if (body.showKick !== undefined) { config.showKick = !!body.showKick; changed = true; }
+    if (body.showTwitcas !== undefined) { config.showTwitcas = !!body.showTwitcas; changed = true; }
 
     if (body.commentSource !== undefined) {
-      if (['fw', 'kick', 'tiktok'].includes(body.commentSource)) {
+      if (['fw', 'kick', 'tiktok', 'twitcas'].includes(body.commentSource)) {
         config.commentSource = body.commentSource;
         changed = true;
       }
@@ -1479,7 +1633,7 @@ check();
     // コメント欄に流すプラットフォーム(複数選択可・チェックボックス)
     if (body.commentSources !== undefined) {
       if (Array.isArray(body.commentSources)) {
-        const valid = [...new Set(body.commentSources.filter((s) => ['fw', 'kick', 'tiktok'].includes(s)))];
+        const valid = [...new Set(body.commentSources.filter((s) => ['fw', 'kick', 'tiktok', 'twitcas'].includes(s)))];
         if (valid.length > 0) {
           config.commentSources = valid;
           config.commentSource = valid[0]; // 後方互換用に先頭を反映
@@ -1609,6 +1763,23 @@ check();
       }
     }
 
+    if (body.twitcastingUser !== undefined) {
+      const uname = String(body.twitcastingUser).trim()
+        .replace(/^https?:\/\/(www\.)?twitcasting\.tv\//i, '')
+        .split('/')[0]
+        .replace(/^@/, '');
+      const changingUname = uname !== config.twitcastingUser;
+      config.twitcastingUser = uname;
+      fetchPaused.twitcas = false;
+      changed = true;
+      if (uname) {
+        // ユーザーが変わった場合(または一時停止からの再開)は、次回ポーリングで確実に配信状況を再確認させる
+        if (changingUname) { twitcastingMovieId = null; twitcastingSliceId = null; twitcastingLastLiveCheck = 0; }
+      } else {
+        disconnectTwitCasting();
+      }
+    }
+
     // ---- 取得配信を一旦切断(URL/ユーザー名は保持したまま接続だけ止める) ----
     if (body.disconnect !== undefined) {
       if (body.disconnect === 'main') {
@@ -1619,6 +1790,9 @@ check();
       } else if (body.disconnect === 'tiktok') {
         fetchPaused.tiktok = true;
         disconnectTikTok();
+      } else if (body.disconnect === 'twitcas') {
+        fetchPaused.twitcas = true;
+        disconnectTwitCasting();
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, fetchPaused }));
@@ -1627,7 +1801,7 @@ check();
 
     if (changed) saveConfig(config);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug, tiktokUsername: config.tiktokUsername }));
+    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug, tiktokUsername: config.tiktokUsername, twitcastingUser: config.twitcastingUser }));
     return;
   }
 
@@ -1656,7 +1830,7 @@ check();
     // ?platform= が指定されていればそちらを優先(TikTok用キャプチャウィンドウなど、
     // メインのOBSオーバーレイとは別のプラットフォームを同時に表示するため)
     const platformOverride = url.searchParams.get('platform');
-    const activeSources = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok')
+    const activeSources = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok' || platformOverride === 'twitcas')
       ? [platformOverride]
       : (Array.isArray(config.commentSources) && config.commentSources.length ? config.commentSources : [config.commentSource]);
     const newComments = recentComments.filter(
