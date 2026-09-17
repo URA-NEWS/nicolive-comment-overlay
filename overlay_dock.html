@@ -251,6 +251,9 @@
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" id="showKick" checked> Kick
   </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="showTwitcas" checked> ツイキャス
+  </label>
 </div>
 <label>コメント欄に流すプラットフォーム(複数選択可)</label>
 <div class="speed-row" style="gap:14px">
@@ -263,8 +266,11 @@
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" name="commentSource" value="tiktok"> TikTok
   </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" name="commentSource" value="twitcas"> ツイキャス
+  </label>
 </div>
-<div class="hint">フォロワー数・閲覧数のヘッダーは両方同時に表示されます。複数チェックした場合、コメビュ上でプラットフォームごとに色分け表示されます</div>
+<div class="hint">フォロワー数・閲覧数のヘッダーは複数同時に表示できます。複数チェックした場合、コメビュ上でプラットフォームごとに色分け表示されます</div>
 
 <label for="tiktokUsername" style="margin-top:12px">TikTokユーザー名（@なし、例: tiktok）</label>
 <input type="text" id="tiktokUsername" placeholder="tiktok または https://www.tiktok.com/@tiktok/live">
@@ -273,6 +279,13 @@
 <div id="tiktokStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
 <div class="hint">TikTokはOBSを使わないため、キャプチャ用の別ウィンドウを開いてください（黒背景・ウィンドウキャプチャ用）</div>
 <button onclick="openTiktokWindow()" style="margin-top:6px">TikTokキャプチャ用ウィンドウを開く</button>
+
+<label for="twitcastingUser" style="margin-top:12px">ツイキャスユーザー名（@なし、例: c:xxxxx）</label>
+<input type="text" id="twitcastingUser" placeholder="ユーザー名 または https://twitcasting.tv/xxxxx">
+<button onclick="setTwitcastingUser()">設定</button>
+<button onclick="disconnectTwitcas()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
+<div id="twitcasStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">コメント取得には環境変数 TWITCASTING_CLIENT_ID / TWITCASTING_CLIENT_SECRET(アプリ登録して取得)がサーバー側に必要です</div>
 
 <h2 class="acc">クイズ（ミリオネア風）</h2>
 <div class="accBody"><label>問題文</label>
@@ -656,6 +669,25 @@
         tiktokUsernameInitialized = true;
       }
 
+      // ツイキャス状態
+      const twitcasStatusEl = document.getElementById('twitcasStatus');
+      if (paused.twitcas && data.twitcastingUser) {
+        twitcasStatusEl.textContent = `ツイキャス接続を切断中(一時停止): @${data.twitcastingUser}`;
+        twitcasStatusEl.style.color = '#ff8080';
+      } else if (data.twitcastingUser) {
+        twitcasStatusEl.textContent = data.twitcastingConnected
+          ? `ツイキャス接続中: @${data.twitcastingUser}（視聴数: ${data.twitcastingViewerCount ?? '-'}）`
+          : `ツイキャス配信待ち: @${data.twitcastingUser}`;
+        twitcasStatusEl.style.color = data.twitcastingConnected ? '#6cce6c' : '#aaa';
+      } else {
+        twitcasStatusEl.textContent = 'ツイキャス未設定';
+        twitcasStatusEl.style.color = '#888';
+      }
+      if (!twitcastingUserInitialized && data.twitcastingUser !== undefined) {
+        document.getElementById('twitcastingUser').value = data.twitcastingUser;
+        twitcastingUserInitialized = true;
+      }
+
       if (!speedInitialized) {
         document.getElementById('speedRange').value = data.speed;
         document.getElementById('speedValue').textContent = Number(data.speed).toFixed(1);
@@ -675,6 +707,7 @@
       if (!headerVisInitialized && data.showFw !== undefined) {
         document.getElementById('showFw').checked = data.showFw;
         document.getElementById('showKick').checked = data.showKick;
+        document.getElementById('showTwitcas').checked = data.showTwitcas;
         headerVisInitialized = true;
       }
 
@@ -918,6 +951,23 @@
     } catch (e) {}
   }
 
+  async function disconnectTwitcas() {
+    const msg = document.getElementById('twitcasStatus');
+    try {
+      const res = await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: 'twitcas' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        msg.textContent = 'ツイキャスの接続を切りました(ユーザー名はそのまま。再開するにはもう一度「設定」を押してください)';
+        msg.style.color = '#ff8080';
+        refreshStatus();
+      }
+    } catch (e) {}
+  }
+
   // ---------- コメントソース切り替え(複数選択可) ----------
   document.querySelectorAll('input[name="commentSource"]').forEach((cb) => {
     cb.addEventListener('change', async (ev) => {
@@ -939,6 +989,7 @@
   let commentSourceInitialized = false;
   let headerVisInitialized = false;
   let tiktokUsernameInitialized = false;
+  let twitcastingUserInitialized = false;
 
   async function setTiktokUsername() {
     const input = document.getElementById('tiktokUsername').value.trim();
@@ -954,6 +1005,22 @@
       : 'TikTok未設定';
     msg.style.color = '#aaa';
   }
+
+  async function setTwitcastingUser() {
+    const input = document.getElementById('twitcastingUser').value.trim();
+    const res = await fetch('/api/overlay/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ twitcastingUser: input }),
+    });
+    const data = await res.json();
+    const msg = document.getElementById('twitcasStatus');
+    msg.textContent = data.twitcastingUser
+      ? `ツイキャス設定: @${data.twitcastingUser}（配信確認中...）`
+      : 'ツイキャス未設定';
+    msg.style.color = '#aaa';
+  }
+
 
   function openTiktokWindow() {
     const url = `${location.origin}/overlay-auto?platform=tiktok&window=1`;
@@ -975,6 +1042,15 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ showKick: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+  document.getElementById('showTwitcas').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showTwitcas: e.target.checked }),
       });
     } catch (err) {}
   });
