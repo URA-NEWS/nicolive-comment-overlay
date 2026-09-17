@@ -235,13 +235,17 @@
 <body>
 <h1>ニコ生風オーバーレイ 設定</h1>
 
+<h2 class="acc">コメビュ設定</h2>
+<div class="accBody">
 
-<label for="liveUrl">配信URL（ふわっち / Kick どちらでもOK・自動判別）</label>
-<input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... または https://kick.com/...">
+<label for="liveUrl">配信URL（ふわっち / Kick / ツイキャス、URLを貼るだけで自動判別）</label>
+<input type="text" id="liveUrl" placeholder="https://whowatch.tv/viewer/... / https://kick.com/... / https://twitcasting.tv/...">
 <button onclick="setLiveId()">設定</button>
 <button onclick="disconnectMain()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
 <div class="msg" id="msg"></div>
 <div id="kickStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div id="twitcasStatus" style="margin-top:4px;font-size:12px;color:#888;"></div>
+<div class="hint">ツイキャスのコメント取得には環境変数 TWITCASTING_CLIENT_ID / TWITCASTING_CLIENT_SECRET(アプリ登録して取得)がサーバー側に必要です</div>
 
 <label style="margin-top:12px">ヘッダーに表示するプラットフォーム</label>
 <div class="speed-row" style="gap:14px;margin-bottom:6px">
@@ -280,12 +284,7 @@
 <div class="hint">TikTokはOBSを使わないため、キャプチャ用の別ウィンドウを開いてください（黒背景・ウィンドウキャプチャ用）</div>
 <button onclick="openTiktokWindow()" style="margin-top:6px">TikTokキャプチャ用ウィンドウを開く</button>
 
-<label for="twitcastingUser" style="margin-top:12px">ツイキャスユーザー名（@なし、例: c:xxxxx）</label>
-<input type="text" id="twitcastingUser" placeholder="ユーザー名 または https://twitcasting.tv/xxxxx">
-<button onclick="setTwitcastingUser()">設定</button>
-<button onclick="disconnectTwitcas()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
-<div id="twitcasStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
-<div class="hint">コメント取得には環境変数 TWITCASTING_CLIENT_ID / TWITCASTING_CLIENT_SECRET(アプリ登録して取得)がサーバー側に必要です</div>
+</div>
 
 <h2 class="acc">クイズ（ミリオネア風）</h2>
 <div class="accBody"><label>問題文</label>
@@ -683,11 +682,6 @@
         twitcasStatusEl.textContent = 'ツイキャス未設定';
         twitcasStatusEl.style.color = '#888';
       }
-      if (!twitcastingUserInitialized && data.twitcastingUser !== undefined) {
-        document.getElementById('twitcastingUser').value = data.twitcastingUser;
-        twitcastingUserInitialized = true;
-      }
-
       if (!speedInitialized) {
         document.getElementById('speedRange').value = data.speed;
         document.getElementById('speedValue').textContent = Number(data.speed).toFixed(1);
@@ -884,7 +878,10 @@
     if (!input) return;
     try {
       let body;
-      if (/kick\.com/i.test(input) || /^[a-zA-Z0-9_]+$/.test(input) && !/^\d+$/.test(input)) {
+      if (/twitcasting\.tv/i.test(input) || /^c:[a-zA-Z0-9_]+$/i.test(input)) {
+        // ツイキャス (URLまたは c:xxxxx 形式のユーザーID)
+        body = { twitcastingUser: input };
+      } else if (/kick\.com/i.test(input) || /^[a-zA-Z0-9_]+$/.test(input) && !/^\d+$/.test(input)) {
         // Kick (URLまたは英字スラッグ)
         body = { kickSlug: input };
       } else {
@@ -898,7 +895,9 @@
       });
       const data = await res.json();
       if (data.ok) {
-        msg.textContent = body.kickSlug !== undefined
+        msg.textContent = body.twitcastingUser !== undefined
+          ? `ツイキャス設定: @${data.twitcastingUser}（配信確認中...）`
+          : body.kickSlug !== undefined
           ? `Kick設定: ${data.kickSlug} (接続中...)`
           : `ふわっち設定完了: 配信ID ${data.liveId}`;
         msg.className = 'msg ok';
@@ -924,7 +923,7 @@
       });
       const data = await res.json();
       if (data.ok) {
-        msg.textContent = 'ふわっち/Kickの接続を切りました(URLはそのまま。再開するにはもう一度「設定」を押してください)';
+        msg.textContent = 'ふわっち/Kick/ツイキャスの接続を切りました(URLはそのまま。再開するにはもう一度「設定」を押してください)';
         msg.className = 'msg ok';
         refreshStatus();
       }
@@ -945,23 +944,6 @@
       const data = await res.json();
       if (data.ok) {
         msg.textContent = 'TikTokの接続を切りました(ユーザー名はそのまま。再開するにはもう一度「設定」を押してください)';
-        msg.style.color = '#ff8080';
-        refreshStatus();
-      }
-    } catch (e) {}
-  }
-
-  async function disconnectTwitcas() {
-    const msg = document.getElementById('twitcasStatus');
-    try {
-      const res = await fetch('/api/overlay/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disconnect: 'twitcas' }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        msg.textContent = 'ツイキャスの接続を切りました(ユーザー名はそのまま。再開するにはもう一度「設定」を押してください)';
         msg.style.color = '#ff8080';
         refreshStatus();
       }
@@ -989,7 +971,6 @@
   let commentSourceInitialized = false;
   let headerVisInitialized = false;
   let tiktokUsernameInitialized = false;
-  let twitcastingUserInitialized = false;
 
   async function setTiktokUsername() {
     const input = document.getElementById('tiktokUsername').value.trim();
@@ -1005,22 +986,6 @@
       : 'TikTok未設定';
     msg.style.color = '#aaa';
   }
-
-  async function setTwitcastingUser() {
-    const input = document.getElementById('twitcastingUser').value.trim();
-    const res = await fetch('/api/overlay/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ twitcastingUser: input }),
-    });
-    const data = await res.json();
-    const msg = document.getElementById('twitcasStatus');
-    msg.textContent = data.twitcastingUser
-      ? `ツイキャス設定: @${data.twitcastingUser}（配信確認中...）`
-      : 'ツイキャス未設定';
-    msg.style.color = '#aaa';
-  }
-
 
   function openTiktokWindow() {
     const url = `${location.origin}/overlay-auto?platform=tiktok&window=1`;
