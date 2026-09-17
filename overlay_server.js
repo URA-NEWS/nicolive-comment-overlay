@@ -1783,10 +1783,12 @@ check();
     // ---- 取得配信を一旦切断(URL/ユーザー名は保持したまま接続だけ止める) ----
     if (body.disconnect !== undefined) {
       if (body.disconnect === 'main') {
-        // 「配信URL」欄が対象にしているふわっち/Kick両方を停止
+        // 「配信URL」欄が対象にしているふわっち/Kick/ツイキャス全てを停止
         fetchPaused.fw = true;
         fetchPaused.kick = true;
+        fetchPaused.twitcas = true;
         disconnectKick();
+        disconnectTwitCasting();
       } else if (body.disconnect === 'tiktok') {
         fetchPaused.tiktok = true;
         disconnectTikTok();
