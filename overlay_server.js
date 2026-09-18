@@ -1262,7 +1262,10 @@ function twitcastingAuthHeaders() {
     'Authorization': `Basic ${token}`,
     'X-Api-Version': '2.0',
     'Accept': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    // ブラウザを偽装したUser-Agentだと、サーバー(Render/米国)から叩いたときだけcomments APIが
+    // 中身を空配列で返す現象を確認したため、ブラウザ偽装をやめて素直なUAにする(サーバー環境からの
+    // 検証で問題切り分け中)。
+    'User-Agent': 'nicolive-comment-overlay/1.0',
   };
 }
 
