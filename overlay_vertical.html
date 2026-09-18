@@ -1012,12 +1012,16 @@
     let last = 0, m;
     while ((m = re.exec(text))) {
       if (m.index > last) container.appendChild(document.createTextNode(text.slice(last, m.index)));
-      const img = document.createElement('img');
-      img.src = `https://files.kick.com/emotes/${m[1]}/fullsize`;
+      // 画像が読み込み終わるまではDOMに挿入しない(読み込み中/失敗時に空の枠や
+      // 隙間ができて文字列の途中に何かが被っているように見えるのを防ぐ)
+      const placeholder = document.createComment('emote');
+      container.appendChild(placeholder);
+      const img = new Image();
       img.style.height = '1.3em';
       img.style.verticalAlign = 'middle';
-      img.onerror = () => { img.remove(); };
-      container.appendChild(img);
+      img.onload = () => { placeholder.replaceWith(img); };
+      img.onerror = () => { placeholder.remove(); };
+      img.src = `https://files.kick.com/emotes/${m[1]}/fullsize`;
       last = re.lastIndex;
     }
     if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)));
