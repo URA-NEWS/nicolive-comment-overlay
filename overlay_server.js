@@ -110,9 +110,9 @@ function loadConfig() {
     if (typeof c.goalVisible !== 'boolean') c.goalVisible = false;
     if (typeof c.goalBaseline !== 'number') c.goalBaseline = 0;
     if (typeof c.geminiApiKey !== 'string') c.geminiApiKey = '';
-    if (!['fw', 'kick', 'tiktok', 'twitcas'].includes(c.commentSource)) c.commentSource = 'fw';
+    if (!['fw', 'kick', 'twitcas'].includes(c.commentSource)) c.commentSource = 'fw';
     // コメント欄に流すプラットフォームは複数選択可(チェックボックス化)。旧形式(単一文字列)は配列に移行
-    if (!Array.isArray(c.commentSources) || !c.commentSources.every((s) => ['fw', 'kick', 'tiktok', 'twitcas'].includes(s))) {
+    if (!Array.isArray(c.commentSources) || !c.commentSources.every((s) => ['fw', 'kick', 'twitcas'].includes(s))) {
       c.commentSources = [c.commentSource];
     }
     c.commentSources = [...new Set(c.commentSources)];
@@ -120,8 +120,10 @@ function loadConfig() {
     if (typeof c.showFw !== 'boolean') c.showFw = true;
     if (typeof c.showKick !== 'boolean') c.showKick = true;
     if (typeof c.showTwitcas !== 'boolean') c.showTwitcas = true;
-    if (typeof c.tiktokUsername !== 'string') c.tiktokUsername = '';
     if (typeof c.twitcastingUser !== 'string') c.twitcastingUser = '';
+    // 「配信終了まで」バッジ(実際はコメント無言タイマー): ON/OFFとカウントダウン秒数をドックから設定可能にする
+    if (typeof c.countdownEnabled !== 'boolean') c.countdownEnabled = true;
+    if (typeof c.countdownSeconds !== 'number' || !(c.countdownSeconds >= 5 && c.countdownSeconds <= 300)) c.countdownSeconds = 30;
     if (typeof c.scheduleEnabled !== 'boolean') c.scheduleEnabled = true;
     // ''(または不正値) = 自動(実際の今週を表示)。"YYYY-MM-DD"(月曜日付) = その週を強制的に表示(下書きプレビュー用)
     if (typeof c.scheduleDisplayWeek !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(c.scheduleDisplayWeek)) c.scheduleDisplayWeek = '';
@@ -144,7 +146,8 @@ function loadConfig() {
     return c;
   } catch {
     return {
-      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', commentSources: ['fw'], showFw: true, showKick: true, showTwitcas: true, tiktokUsername: '', twitcastingUser: '',
+      liveId: '', speed: 7, kickSlug: '', verticalPos: 'right', displayMode: 'nico', bgOpacity: 55, topic: '', topicVisible: false, goalTarget: 0, goalRate: 1, goalVisible: false, goalBaseline: 0, geminiApiKey: '', commentSource: 'fw', commentSources: ['fw'], showFw: true, showKick: true, showTwitcas: true, twitcastingUser: '',
+      countdownEnabled: true, countdownSeconds: 30,
       scheduleEnabled: true,
       scheduleDisplayWeek: '',
       scheduleByWeek: {},
@@ -227,7 +230,6 @@ function addComment(obj) {
     currentCommentTick.total++;
     if (obj.platform === 'fw') currentCommentTick.fw++;
     else if (obj.platform === 'kick') currentCommentTick.kick++;
-    else if (obj.platform === 'tiktok') currentCommentTick.tiktok++;
     else if (obj.platform === 'twitcas') currentCommentTick.twitcas++;
   }
   commentIdCounter++;
@@ -663,7 +665,7 @@ function toJstDateStr(ms) {
 let currentStream = null;    // 進行中の配信レコード(stats.streamsの末尾要素への参照)
 let statsOfflineTicks = 0;
 let statsPaused = false;     // ドックの「計測を停止」スイッチ。trueの間は自動開始/終了判定を止める
-let currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0, twitcas: 0 }; // 直近1分間のコメント/ギフト等の件数(プラットフォーム別・addCommentでカウント)
+let currentCommentTick = { total: 0, fw: 0, kick: 0, twitcas: 0 }; // 直近1分間のコメント/ギフト等の件数(プラットフォーム別・addCommentでカウント)
 
 // サーバー再起動/redeployで正常終了できなかった配信記録が残っていたら、その時点で確定させる
 (function recoverUnfinishedStream() {
@@ -719,11 +721,10 @@ function statsTick() {
       count: currentCommentTick.total,
       fw: currentCommentTick.fw,
       kick: currentCommentTick.kick,
-      tiktok: currentCommentTick.tiktok,
       twitcas: currentCommentTick.twitcas,
     });
     if (currentStream.commentBuckets.length > 1000) currentStream.commentBuckets = currentStream.commentBuckets.slice(-1000);
-    currentCommentTick = { total: 0, fw: 0, kick: 0, tiktok: 0, twitcas: 0 };
+    currentCommentTick = { total: 0, fw: 0, kick: 0, twitcas: 0 };
   }
   if (statsPaused) return; // 手動停止中は自動開始/終了判定を行わない
   // 表示用のfwViewerCount/kickViewerCountは配信終了直後も直近値を保持することがあるため、
@@ -849,7 +850,7 @@ let kickReconnectTimer = null;
 let kickChatroomId = null;
 // ドックの「接続を切る」ボタンで一旦取得を止めるためのフラグ(config永続化はしない=一時的な状態)。
 // 再度「設定」ボタンでURL/ユーザー名を送信すると解除されて再接続する。
-const fetchPaused = { fw: false, kick: false, tiktok: false, twitcas: false };
+const fetchPaused = { fw: false, kick: false, twitcas: false };
 
 async function getKickAccessToken() {
   if (kickAccessToken && Date.now() < kickTokenExpiresAt - 30000) return kickAccessToken;
@@ -1149,107 +1150,6 @@ function disconnectKick() {
 // 起動時に保存済みslugがあれば接続
 if (config.kickSlug) {
   setTimeout(() => connectKickChat(config.kickSlug), 2000);
-}
-
-// ============================================================
-// TikTok LIVE対応 (tiktok-live-connector, 非公式)
-// ============================================================
-// このパッケージはESM専用のため、CommonJSからは動的import()で読み込む。
-let TikTokLiveConnection = null;
-let tiktokLibLoadPromise = null;
-function loadTikTokLib() {
-  if (TikTokLiveConnection) return Promise.resolve();
-  if (!tiktokLibLoadPromise) {
-    tiktokLibLoadPromise = import('tiktok-live-connector').then((mod) => {
-      TikTokLiveConnection = mod.TikTokLiveConnection;
-    });
-  }
-  return tiktokLibLoadPromise;
-}
-
-let tiktokConn = null;
-let tiktokReconnectTimer = null;
-let tiktokViewerCount = null;
-let tiktokConnected = false;
-
-async function connectTikTok(username) {
-  if (!username || fetchPaused.tiktok) return;
-  try {
-    await loadTikTokLib();
-  } catch (e) {
-    console.error('[TikTok] ライブラリ読み込み失敗:', e.message);
-    return;
-  }
-
-  disconnectTikTok();
-
-  const uniqueId = String(username).trim().replace(/^@/, '');
-  console.log(`[TikTok] 接続試行: @${uniqueId}`);
-
-  const opts = {};
-  if (process.env.TIKTOK_SIGN_API_KEY) opts.signApiKey = process.env.TIKTOK_SIGN_API_KEY;
-  const conn = new TikTokLiveConnection(uniqueId, opts);
-  tiktokConn = conn;
-
-  conn.on('chat', (data) => {
-    addComment({
-      name: data.user?.nickname || data.user?.uniqueId || '?',
-      text: data.comment || '',
-      isItem: false,
-      platform: 'tiktok',
-    });
-  });
-
-  conn.on('gift', (data) => {
-    const giftType = data.giftDetails?.giftType;
-    if (giftType === 1 && !data.repeatEnd) return; // 連打中は完了時のみ計上
-    const giftName = data.giftDetails?.giftName || 'ギフト';
-    addComment({
-      name: data.user?.nickname || data.user?.uniqueId || '?',
-      text: `${giftName} ×${data.repeatCount || 1}`,
-      isItem: true,
-      itemLabel: giftName,
-      itemCount: data.repeatCount || 1,
-      platform: 'tiktok',
-    });
-  });
-
-  conn.on('roomUser', (data) => {
-    if (Number.isFinite(Number(data.viewerCount))) tiktokViewerCount = Number(data.viewerCount);
-  });
-
-  conn.on('disconnected', () => {
-    tiktokConnected = false;
-    console.log('[TikTok] 切断。30秒後に再接続');
-    clearTimeout(tiktokReconnectTimer);
-    if (!fetchPaused.tiktok) tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
-  });
-
-  conn.on('error', (e) => {
-    console.error('[TikTok] error:', e && (e.info || e.exception?.message || e.message));
-  });
-
-  try {
-    const state = await conn.connect();
-    tiktokConnected = true;
-    console.log(`[TikTok] 接続完了 roomId=${state.roomId}`);
-  } catch (e) {
-    tiktokConnected = false;
-    console.error('[TikTok] 接続失敗:', e.message);
-    clearTimeout(tiktokReconnectTimer);
-    if (!fetchPaused.tiktok) tiktokReconnectTimer = setTimeout(() => connectTikTok(config.tiktokUsername), 30000);
-  }
-}
-
-function disconnectTikTok() {
-  clearTimeout(tiktokReconnectTimer);
-  if (tiktokConn) { try { tiktokConn.disconnect(); } catch {} tiktokConn = null; }
-  tiktokConnected = false;
-  tiktokViewerCount = null;
-}
-
-if (config.tiktokUsername) {
-  setTimeout(() => connectTikTok(config.tiktokUsername), 2000);
 }
 
 // ============================================================
@@ -1590,9 +1490,8 @@ check();
       showFw: config.showFw,
       showKick: config.showKick,
       showTwitcas: config.showTwitcas,
-      tiktokUsername: config.tiktokUsername,
-      tiktokConnected,
-      tiktokViewerCount,
+      countdownEnabled: config.countdownEnabled,
+      countdownSeconds: config.countdownSeconds,
       twitcastingUser: config.twitcastingUser,
       twitcastingConnected: twitcastingLiveNow,
       twitcastingViewerCount,
@@ -1688,8 +1587,14 @@ check();
     if (body.showKick !== undefined) { config.showKick = !!body.showKick; changed = true; }
     if (body.showTwitcas !== undefined) { config.showTwitcas = !!body.showTwitcas; changed = true; }
 
+    if (body.countdownEnabled !== undefined) { config.countdownEnabled = !!body.countdownEnabled; changed = true; }
+    if (body.countdownSeconds !== undefined) {
+      const v = Number(body.countdownSeconds);
+      if (Number.isFinite(v) && v >= 5 && v <= 300) { config.countdownSeconds = v; changed = true; }
+    }
+
     if (body.commentSource !== undefined) {
-      if (['fw', 'kick', 'tiktok', 'twitcas'].includes(body.commentSource)) {
+      if (['fw', 'kick', 'twitcas'].includes(body.commentSource)) {
         config.commentSource = body.commentSource;
         changed = true;
       }
@@ -1698,7 +1603,7 @@ check();
     // コメント欄に流すプラットフォーム(複数選択可・チェックボックス)
     if (body.commentSources !== undefined) {
       if (Array.isArray(body.commentSources)) {
-        const valid = [...new Set(body.commentSources.filter((s) => ['fw', 'kick', 'tiktok', 'twitcas'].includes(s)))];
+        const valid = [...new Set(body.commentSources.filter((s) => ['fw', 'kick', 'twitcas'].includes(s)))];
         if (valid.length > 0) {
           config.commentSources = valid;
           config.commentSource = valid[0]; // 後方互換用に先頭を反映
@@ -1811,23 +1716,6 @@ check();
       }
     }
 
-    if (body.tiktokUsername !== undefined) {
-      const uname = String(body.tiktokUsername).trim()
-        .replace(/^https?:\/\/(www\.)?tiktok\.com\//i, '')
-        .replace(/\/live\/?$/i, '')
-        .replace(/^@/, '');
-      const changingUname = uname !== config.tiktokUsername;
-      const wasPaused = fetchPaused.tiktok;
-      config.tiktokUsername = uname;
-      fetchPaused.tiktok = false;
-      changed = true;
-      if (uname) {
-        if (changingUname || wasPaused) connectTikTok(uname);
-      } else {
-        disconnectTikTok();
-      }
-    }
-
     if (body.twitcastingUser !== undefined) {
       const uname = String(body.twitcastingUser).trim()
         .replace(/^https?:\/\/(www\.)?twitcasting\.tv\//i, '')
@@ -1854,9 +1742,6 @@ check();
         fetchPaused.twitcas = true;
         disconnectKick();
         disconnectTwitCasting();
-      } else if (body.disconnect === 'tiktok') {
-        fetchPaused.tiktok = true;
-        disconnectTikTok();
       } else if (body.disconnect === 'twitcas') {
         fetchPaused.twitcas = true;
         disconnectTwitCasting();
@@ -1868,7 +1753,7 @@ check();
 
     if (changed) saveConfig(config);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug, tiktokUsername: config.tiktokUsername, twitcastingUser: config.twitcastingUser }));
+    res.end(JSON.stringify({ ok: true, liveId: config.liveId, speed: config.speed, kickSlug: config.kickSlug, twitcastingUser: config.twitcastingUser }));
     return;
   }
 
@@ -1894,10 +1779,10 @@ check();
 
   if (url.pathname === '/api/overlay/comments' && req.method === 'GET') {
     const afterId = Number(url.searchParams.get('afterId') || '0');
-    // ?platform= が指定されていればそちらを優先(TikTok用キャプチャウィンドウなど、
-    // メインのOBSオーバーレイとは別のプラットフォームを同時に表示するため)
+    // ?platform= が指定されていればそちらを優先(特定プラットフォームだけの
+    // 別キャプチャウィンドウなど、メインのOBSオーバーレイと同時に表示するため)
     const platformOverride = url.searchParams.get('platform');
-    const activeSources = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'tiktok' || platformOverride === 'twitcas')
+    const activeSources = (platformOverride === 'fw' || platformOverride === 'kick' || platformOverride === 'twitcas')
       ? [platformOverride]
       : (Array.isArray(config.commentSources) && config.commentSources.length ? config.commentSources : [config.commentSource]);
     const newComments = recentComments.filter(
