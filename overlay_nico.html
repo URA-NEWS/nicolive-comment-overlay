@@ -802,6 +802,7 @@
 
   /* 配信スケジュール(ドックの「配信スケジュール」で登録・見た目を調整) */
   #hsSchedWrap {
+    display: none;
     position: fixed;
     top: 50%;
     right: 0;
@@ -817,13 +818,6 @@
     box-shadow: 0 14px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
     font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
     overflow: hidden;
-  }
-  .hsSchedKicker {
-    font-size: 0.6em;
-    font-weight: 700;
-    letter-spacing: 0.3em;
-    opacity: 0.4;
-    margin-bottom: 3px;
   }
   #hsSchedPanel .hsSchedHeading {
     font-weight: 800;
@@ -960,7 +954,6 @@
   </div>
 </div>
 <div id="hsSchedWrap"><div id="hsSchedPanel">
-  <div class="hsSchedKicker">SCHEDULE</div>
   <div class="hsSchedHeading" id="hsSchedHeading"></div>
   <div id="hsSchedRows"></div>
 </div></div>
