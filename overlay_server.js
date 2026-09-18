@@ -1321,17 +1321,12 @@ async function pollTwitCastingComments() {
     if (!twitcastingMovieId) return;
 
     // コメント取得(slice_idで前回取得以降の新着のみを取る)
-    // 実APIの挙動: slice_id未指定でsort=old-to-newを指定すると空配列が返る(全コメント数=all_countはあるのに comments:[] になる)ことを
-    // ログで確認済み。そのため、まだ基準(slice_id)が無い初回だけは sort=new-to-old で「直近のコメント」を取得して起点を作り、
-    // 以降の差分取得(slice_id指定あり)では old-to-new で新しい順に取得する。
+    // 実APIの実測挙動(curlで直接確認済み): sortパラメータに'new-to-old'/'old-to-new'のような値を渡すと
+    // 常に空配列が返る(all_countはあるのにcomments:[])。sortパラメータ自体を付けないのが正解で、その場合
+    // 常に「新しい順(id降順)」で返る。slice_idを付けると「そのidより新しいコメント」が同じく新しい順で返る。
     const isBaseline = twitcastingSliceId === null;
     const params = new URLSearchParams({ limit: '50' });
-    if (isBaseline) {
-      params.set('sort', 'new-to-old');
-    } else {
-      params.set('sort', 'old-to-new');
-      params.set('slice_id', String(twitcastingSliceId));
-    }
+    if (!isBaseline) params.set('slice_id', String(twitcastingSliceId));
     const cres = await fetch(`https://apiv2.twitcasting.tv/movies/${twitcastingMovieId}/comments?${params.toString()}`, { headers });
     if (!cres.ok) {
       console.error('[TwitCasting] comments HTTP', cres.status, (await cres.text()).slice(0, 200));
@@ -1342,19 +1337,17 @@ async function pollTwitCastingComments() {
       twitcastingLoggedRawComments = true;
       console.log('[TwitCasting] comments API 生レスポンス(初回のみログ出力):', JSON.stringify(cd).slice(0, 1500));
     }
-    const comments = cd.comments || [];
+    const comments = cd.comments || []; // 新しい順(id降順)で返る
     if (comments.length === 0) return;
 
-    // old-to-newの場合は配列の最後の要素が最新、new-to-old(基準作成時)の場合は先頭が最新。
-    // id自体が数値化できる保証がない(巨大な数値文字列だとNumber()変換で精度落ちする可能性もある)ため、
-    // 独自にmax値を計算せずAPIが返す順序をそのまま信用し、最新コメントのidをそのまま次回のslice_idに使う。
-    const newestComment = isBaseline ? comments[0] : comments[comments.length - 1];
-    const lastId = newestComment && newestComment.id != null ? String(newestComment.id) : null;
+    // 新しい順で返るので先頭が最新コメント。id自体が数値化できる保証がない(巨大な数値文字列だと
+    // Number()変換で精度落ちする可能性もある)ため、独自にmax値を計算せずAPIが返す順序をそのまま信用する。
+    const newestId = comments[0] && comments[0].id != null ? String(comments[0].id) : null;
 
     if (isBaseline) {
       // 初回取得時は既存コメントを一気に「新着」として流さず、以降の差分取得の起点だけ作る
       console.log(`[TwitCasting] 初回コメント取得(基準作成): ${comments.length}件. サンプル: ${JSON.stringify(comments.slice(0, 2))}`);
-      twitcastingSliceId = lastId;
+      twitcastingSliceId = newestId;
       if (!twitcastingSliceId) {
         console.error('[TwitCasting] slice_id基準を作成できませんでした(コメントにid項目が無い可能性)。comments[0] =', JSON.stringify(comments[0]));
       } else {
@@ -1363,7 +1356,8 @@ async function pollTwitCastingComments() {
       return;
     }
 
-    for (const c of comments) {
+    // 表示は古い→新しい順に流したいので、新しい順で返ってきた配列を反転する
+    for (const c of [...comments].reverse()) {
       addComment({
         name: c.from_user?.name || c.from_user?.screen_id || '?',
         text: c.message || '',
@@ -1375,7 +1369,7 @@ async function pollTwitCastingComments() {
       });
     }
     console.log(`[TwitCasting] 新着コメント${comments.length}件取得`);
-    if (lastId) twitcastingSliceId = lastId;
+    if (newestId) twitcastingSliceId = newestId;
   } catch (e) {
     console.error('[TwitCastingポーリング エラー]', e.message);
   }
