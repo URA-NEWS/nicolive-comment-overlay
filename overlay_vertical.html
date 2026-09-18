@@ -1049,15 +1049,17 @@
       badge.style.flex = 'none';
       badge.style.alignItems = 'center';
       badge.style.justifyContent = 'center';
-      badge.style.width = '1.3em';
-      badge.style.height = '1.3em';
+      badge.style.width = '1.6em';
+      badge.style.height = '1.6em';
       badge.style.marginRight = '0.35em';
-      badge.style.borderRadius = '5px';
+      badge.style.borderRadius = '6px';
       badge.style.background = PLATFORM_COLORS[c.platform];
       badge.style.color = '#0a0a0a';
-      badge.style.fontSize = '0.72em';
+      badge.style.fontSize = '0.85em';
       badge.style.fontWeight = '900';
       badge.style.lineHeight = '1';
+      badge.style.webkitFontSmoothing = 'antialiased';
+      badge.style.textRendering = 'geometricPrecision';
       nameRow.appendChild(badge);
     }
 
@@ -1133,6 +1135,18 @@
     statsBar.style.display = (fwShow || kickShow || twitcasShow) ? 'flex' : 'none';
   }
 
+  // 「配信終了まで」バッジがFOLLOWERS/VIEWERSのステータスバーと同じ右上に固定
+  // 配置されていて、ステータスバーが表示されている時は常にその上に黒いバッジが
+  // 被って見えていた。ステータスバーの実際の高さぶんだけ下にずらして重ならない
+  // ようにする。
+  function qtRepositionBadge() {
+    const badge = document.getElementById('qtBadge');
+    const statsBar = document.getElementById('statsBar');
+    if (!badge || !statsBar) return;
+    const visible = statsBar.style.display !== 'none' && statsBar.offsetParent !== null;
+    badge.style.top = (visible ? statsBar.getBoundingClientRect().bottom + 8 : 12) + 'px';
+  }
+
   function updateStats(data) {
     setStat('statFwF', data.followerCount);
     setStat('statFwV', data.fwViewerCount);
@@ -1141,6 +1155,7 @@
     setStat('statTwitcasF', data.twitcastingSupporterCount);
     setStat('statTwitcasV', data.twitcastingViewerCount);
     refreshRows(data);
+    qtRepositionBadge();
     updateSurvey(data.survey);
     updateTopic(data.topic);
     updateGoal(data.goal);
