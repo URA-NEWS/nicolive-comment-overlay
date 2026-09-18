@@ -268,21 +268,20 @@
     <input type="checkbox" name="commentSource" value="kick"> Kick
   </label>
   <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="checkbox" name="commentSource" value="tiktok"> TikTok
-  </label>
-  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" name="commentSource" value="twitcas"> ツイキャス
   </label>
 </div>
 <div class="hint">フォロワー数・閲覧数のヘッダーは複数同時に表示できます。複数チェックした場合、コメビュ上でプラットフォームごとに色分け表示されます</div>
 
-<label for="tiktokUsername" style="margin-top:12px">TikTokユーザー名（@なし、例: tiktok）</label>
-<input type="text" id="tiktokUsername" placeholder="tiktok または https://www.tiktok.com/@tiktok/live">
-<button onclick="setTiktokUsername()">設定</button>
-<button onclick="disconnectTiktok()" style="background:#3a1a1a;color:#ff8080;border:1px solid #5a2a2a">接続を切る</button>
-<div id="tiktokStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
-<div class="hint">TikTokはOBSを使わないため、キャプチャ用の別ウィンドウを開いてください（黒背景・ウィンドウキャプチャ用）</div>
-<button onclick="openTiktokWindow()" style="margin-top:6px">TikTokキャプチャ用ウィンドウを開く</button>
+<label style="margin-top:12px">「配信終了まで」カウントダウン(コメントが一定時間止まった時に表示)</label>
+<div class="speed-row" style="gap:14px;align-items:center">
+  <label style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="countdownEnabled" checked> 表示する
+  </label>
+  <label style="margin:0;display:flex;align-items:center;gap:5px">
+    秒数: <input type="number" id="countdownSeconds" min="5" max="300" style="width:70px" value="30">
+  </label>
+</div>
 
 </div>
 
@@ -649,25 +648,6 @@
         kickStatusEl.style.color = '#888';
       }
 
-      // TikTok状態
-      const tiktokStatusEl = document.getElementById('tiktokStatus');
-      if (paused.tiktok && data.tiktokUsername) {
-        tiktokStatusEl.textContent = `TikTok接続を切断中(一時停止): @${data.tiktokUsername}`;
-        tiktokStatusEl.style.color = '#ff8080';
-      } else if (data.tiktokUsername) {
-        tiktokStatusEl.textContent = data.tiktokConnected
-          ? `TikTok接続中: @${data.tiktokUsername}（視聴数: ${data.tiktokViewerCount ?? '-'}）`
-          : `TikTok接続待ち: @${data.tiktokUsername}`;
-        tiktokStatusEl.style.color = data.tiktokConnected ? '#6cce6c' : '#aaa';
-      } else {
-        tiktokStatusEl.textContent = 'TikTok未設定';
-        tiktokStatusEl.style.color = '#888';
-      }
-      if (!tiktokUsernameInitialized && data.tiktokUsername !== undefined) {
-        document.getElementById('tiktokUsername').value = data.tiktokUsername;
-        tiktokUsernameInitialized = true;
-      }
-
       // ツイキャス状態
       const twitcasStatusEl = document.getElementById('twitcasStatus');
       if (paused.twitcas && data.twitcastingUser) {
@@ -703,6 +683,12 @@
         document.getElementById('showKick').checked = data.showKick;
         document.getElementById('showTwitcas').checked = data.showTwitcas;
         headerVisInitialized = true;
+      }
+
+      if (!countdownInitialized && data.countdownEnabled !== undefined) {
+        document.getElementById('countdownEnabled').checked = data.countdownEnabled;
+        document.getElementById('countdownSeconds').value = data.countdownSeconds;
+        countdownInitialized = true;
       }
 
       if (!commentSourceInitialized && (data.commentSources || data.commentSource)) {
@@ -933,23 +919,6 @@
     }
   }
 
-  async function disconnectTiktok() {
-    const msg = document.getElementById('tiktokStatus');
-    try {
-      const res = await fetch('/api/overlay/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disconnect: 'tiktok' }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        msg.textContent = 'TikTokの接続を切りました(ユーザー名はそのまま。再開するにはもう一度「設定」を押してください)';
-        msg.style.color = '#ff8080';
-        refreshStatus();
-      }
-    } catch (e) {}
-  }
-
   // ---------- コメントソース切り替え(複数選択可) ----------
   document.querySelectorAll('input[name="commentSource"]').forEach((cb) => {
     cb.addEventListener('change', async (ev) => {
@@ -970,27 +939,7 @@
   });
   let commentSourceInitialized = false;
   let headerVisInitialized = false;
-  let tiktokUsernameInitialized = false;
-
-  async function setTiktokUsername() {
-    const input = document.getElementById('tiktokUsername').value.trim();
-    const res = await fetch('/api/overlay/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tiktokUsername: input }),
-    });
-    const data = await res.json();
-    const msg = document.getElementById('tiktokStatus');
-    msg.textContent = data.tiktokUsername
-      ? `TikTok設定: @${data.tiktokUsername}（接続中...）`
-      : 'TikTok未設定';
-    msg.style.color = '#aaa';
-  }
-
-  function openTiktokWindow() {
-    const url = `${location.origin}/overlay-auto?platform=tiktok&window=1`;
-    window.open(url, 'tiktokCaptureWindow', 'width=500,height=700,resizable=yes');
-  }
+  let countdownInitialized = false;
 
   document.getElementById('showFw').addEventListener('change', async (e) => {
     try {
@@ -1016,6 +965,27 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ showTwitcas: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+
+  document.getElementById('countdownEnabled').addEventListener('change', async (e) => {
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countdownEnabled: e.target.checked }),
+      });
+    } catch (err) {}
+  });
+  document.getElementById('countdownSeconds').addEventListener('change', async (e) => {
+    const v = Number(e.target.value);
+    if (!Number.isFinite(v) || v < 5 || v > 300) return;
+    try {
+      await fetch('/api/overlay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countdownSeconds: v }),
       });
     } catch (err) {}
   });
