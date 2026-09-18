@@ -1429,7 +1429,9 @@ async function pollTwitCastingSupporterCount() {
     const res = await fetch(`https://apiv2.twitcasting.tv/users/${encodeURIComponent(config.twitcastingUser)}`, { headers });
     if (!res.ok) return;
     const d = await res.json();
-    const count = Number(d.user?.supporter_count);
+    // user.supporter_count は非推奨で常に0固定(公式ドキュメントに明記)。実際の値はレスポンス
+    // トップレベルのsupporter_countに入っている。
+    const count = Number(d.supporter_count);
     if (Number.isFinite(count) && count >= 0) twitcastingSupporterCount = count;
   } catch (e) {
     console.error('[TwitCastingサポーター数 エラー]', e.message);
