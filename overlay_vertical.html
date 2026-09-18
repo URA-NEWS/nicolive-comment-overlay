@@ -785,6 +785,7 @@
   /* 配信スケジュール(ドックの「配信スケジュール」で登録・見た目を調整) */
   /* コメント一覧とは反対側に表示して重ならないようにする */
   #hsSchedWrap {
+    display: none;
     position: fixed;
     top: 50%;
     z-index: 500;
@@ -803,13 +804,6 @@
   }
   .hsSchedOnLeft #hsSchedPanel { border-radius: 0 18px 18px 0; padding-right: 30px; }
   .hsSchedOnRight #hsSchedPanel { border-radius: 18px 0 0 18px; padding-left: 30px; }
-  .hsSchedKicker {
-    font-size: 0.6em;
-    font-weight: 700;
-    letter-spacing: 0.3em;
-    opacity: 0.4;
-    margin-bottom: 3px;
-  }
   #hsSchedPanel .hsSchedHeading {
     font-weight: 800;
     margin-bottom: 14px;
@@ -945,7 +939,6 @@
   </div>
 </div>
 <div id="hsSchedWrap"><div id="hsSchedPanel">
-  <div class="hsSchedKicker">SCHEDULE</div>
   <div class="hsSchedHeading" id="hsSchedHeading"></div>
   <div id="hsSchedRows"></div>
 </div></div>
