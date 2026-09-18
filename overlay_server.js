@@ -13,6 +13,8 @@
 //   GEMINI_API_KEY     - Gemini APIキー(未設定でもドックUIから設定可)
 //   TWITCASTING_CLIENT_ID     - ツイキャス APIv2のクライアントID(アプリ登録して取得)
 //   TWITCASTING_CLIENT_SECRET - ツイキャス APIv2のクライアントシークレット
+//   TWITCASTING_RELAY_URL     - コメント取得だけ日本リージョン経由にするためのSupabase Edge Function URL
+//   TWITCASTING_RELAY_KEY     - 上記Edge Functionの共有シークレット(X-Relay-Keyヘッダーで送る)
 // ============================================================
 
 const http = require('http');
@@ -60,6 +62,12 @@ const KICK_CLIENT_ID = process.env.KICK_CLIENT_ID || '';
 const KICK_CLIENT_SECRET = process.env.KICK_CLIENT_SECRET || '';
 const TWITCASTING_CLIENT_ID = process.env.TWITCASTING_CLIENT_ID || '';
 const TWITCASTING_CLIENT_SECRET = process.env.TWITCASTING_CLIENT_SECRET || '';
+// TwitCastingのコメント本文API(/movies/:id/comments)は海外(Render=米国オレゴン)発のリクエストだと
+// 中身が空配列で返ってくることが実測で確定した(current_live/usersなどのメタ情報系APIは無関係に動く)。
+// Renderには日本リージョンが無いため、コメント取得だけSupabase Edge Function(日本リージョン指定で
+// 呼び出し)を中継させて回避する。未設定ならこれまで通りRenderから直接叩く(空配列のまま)。
+const TWITCASTING_RELAY_URL = process.env.TWITCASTING_RELAY_URL || '';
+const TWITCASTING_RELAY_KEY = process.env.TWITCASTING_RELAY_KEY || '';
 
 // ---------- config ----------
 // 配信スケジュールは「週(月曜日付=YYYY-MM-DD)ごと」に内容を保持する。
@@ -1270,28 +1278,45 @@ function twitcastingAuthHeaders() {
 }
 
 let twitcastingWarnedNoKey = false;
+let twitcastingWarnedNoRelay = false;
 let twitcastingLoggedRawComments = false; // コメントAPIの実レスポンス形式を一度だけログに出す(原因切り分け用)
 
-// Node標準fetch(undici)からのリクエストだけ comments API が空配列を返す現象を確認したため、
-// (手元のcurlでは同じ認証・同じパラメータで正常に返る)TLS/HTTP指紋によるボット判定を疑い、
-// このエンドポイントだけ実際にcurlコマンドを起動して叩く。
-function twitcastingCurlJson(url, headers) {
-  return new Promise((resolve) => {
-    const { execFile } = require('child_process');
-    const args = ['-s', '--max-time', '10'];
-    for (const [k, v] of Object.entries(headers)) {
-      args.push('-H', `${k}: ${v}`);
+// TwitCastingのコメント本文APIだけ、日本リージョンのSupabase Edge Function経由で叩く。
+// x-region: ap-northeast-1 を指定して呼ぶことで、Edge Function自体を東京リージョンで実行させる
+// (Supabaseの「Regional Invocations」機能。指定しないと呼び出し元=Render/米国に一番近いリージョンで
+// 実行されてしまい、意味が無くなるので必須)。
+async function twitcastingRelayComments(movieId, sliceId) {
+  if (!TWITCASTING_RELAY_URL || !TWITCASTING_RELAY_KEY) {
+    if (!twitcastingWarnedNoRelay) {
+      console.error('[TwitCasting] TWITCASTING_RELAY_URL/KEY未設定のため中継できません(コメントは空のままになります)');
+      twitcastingWarnedNoRelay = true;
     }
-    args.push(url);
-    execFile(CURL_BIN, args, { windowsHide: true }, (err, stdout) => {
-      if (err) { console.error('[TwitCasting] curl起動エラー:', err.message); resolve(null); return; }
-      if (!stdout) { resolve(null); return; }
-      try { resolve(JSON.parse(stdout)); } catch (e) {
-        console.error('[TwitCasting] curl出力のJSON解析エラー:', e.message, 'raw:', stdout.slice(0, 300));
-        resolve(null);
-      }
+    return null;
+  }
+  const params = new URLSearchParams({ movieId: String(movieId) });
+  if (sliceId) params.set('slice_id', String(sliceId));
+  const relayUrl = `${TWITCASTING_RELAY_URL.replace(/\/$/, '')}?${params.toString()}`;
+  try {
+    const res = await fetch(relayUrl, {
+      headers: {
+        'x-region': 'ap-northeast-1',
+        'X-Relay-Key': TWITCASTING_RELAY_KEY,
+        'Accept': 'application/json',
+      },
     });
-  });
+    const text = await res.text();
+    if (!res.ok) {
+      console.error('[TwitCasting] 中継Function HTTP', res.status, text.slice(0, 300));
+      return null;
+    }
+    try { return JSON.parse(text); } catch (e) {
+      console.error('[TwitCasting] 中継Function応答のJSON解析エラー:', e.message, 'raw:', text.slice(0, 300));
+      return null;
+    }
+  } catch (e) {
+    console.error('[TwitCasting] 中継Function呼び出しエラー:', e.message);
+    return null;
+  }
 }
 
 async function pollTwitCastingComments() {
@@ -1350,14 +1375,11 @@ async function pollTwitCastingComments() {
     // 常に空配列が返る(all_countはあるのにcomments:[])。sortパラメータ自体を付けないのが正解で、その場合
     // 常に「新しい順(id降順)」で返る。slice_idを付けると「そのidより新しいコメント」が同じく新しい順で返る。
     const isBaseline = twitcastingSliceId === null;
-    const params = new URLSearchParams({ limit: '50' });
-    if (!isBaseline) params.set('slice_id', String(twitcastingSliceId));
-    const commentsUrl = `https://apiv2.twitcasting.tv/movies/${twitcastingMovieId}/comments?${params.toString()}`;
-    const cd = await twitcastingCurlJson(commentsUrl, headers);
-    if (!cd) return; // curl自体が失敗(タイムアウト/JSON解析不可など)。次回のポーリングに任せる
+    const cd = await twitcastingRelayComments(twitcastingMovieId, isBaseline ? null : twitcastingSliceId);
+    if (!cd) return; // 中継Function呼び出し自体が失敗。次回のポーリングに任せる
     if (!twitcastingLoggedRawComments) {
       twitcastingLoggedRawComments = true;
-      console.log('[TwitCasting] comments API 生レスポンス(curl経由・初回のみログ出力):', JSON.stringify(cd).slice(0, 1500));
+      console.log('[TwitCasting] comments API 生レスポンス(中継Function経由・初回のみログ出力):', JSON.stringify(cd).slice(0, 1500));
     }
     const comments = cd.comments || []; // 新しい順(id降順)で返る
     if (comments.length === 0) return;
