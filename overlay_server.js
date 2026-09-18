@@ -1331,10 +1331,22 @@ async function pollTwitCastingComments() {
     const comments = cd.comments || [];
     if (comments.length === 0) return;
 
+    // sort=old-to-newで取得しているため、配列の最後の要素が最新コメント。
+    // id自体が数値化できる保証がない(巨大な数値文字列だとNumber()変換で精度落ちする可能性もある)ため、
+    // 独自にmax値を計算せずAPIが返す順序をそのまま信用し、最後の要素のidをそのまま次回のslice_idに使う。
+    const lastComment = comments[comments.length - 1];
+    const lastId = lastComment && lastComment.id != null ? String(lastComment.id) : null;
+
     if (twitcastingSliceId === null) {
       // 初回取得時は既存コメントを一気に「新着」として流さず、以降の差分取得の起点だけ作る
-      const maxId = comments.reduce((m, c) => (Number(c.id) > m ? Number(c.id) : m), 0);
-      twitcastingSliceId = maxId || null;
+      // (実APIのレスポンス形式が想定と違うと原因切り分けが必要になるため、一度だけ生データをログ出力する)
+      console.log(`[TwitCasting] 初回コメント取得(基準作成): ${comments.length}件. サンプル: ${JSON.stringify(comments.slice(0, 2))}`);
+      twitcastingSliceId = lastId;
+      if (!twitcastingSliceId) {
+        console.error('[TwitCasting] slice_id基準を作成できませんでした(コメントにid項目が無い可能性)。comments[0] =', JSON.stringify(comments[0]));
+      } else {
+        console.log('[TwitCasting] slice_id基準を設定:', twitcastingSliceId);
+      }
       return;
     }
 
@@ -1349,8 +1361,8 @@ async function pollTwitCastingComments() {
         platform: 'twitcas',
       });
     }
-    const maxId = comments.reduce((m, c) => (Number(c.id) > m ? Number(c.id) : m), Number(twitcastingSliceId) || 0);
-    twitcastingSliceId = maxId;
+    console.log(`[TwitCasting] 新着コメント${comments.length}件取得`);
+    if (lastId) twitcastingSliceId = lastId;
   } catch (e) {
     console.error('[TwitCastingポーリング エラー]', e.message);
   }
