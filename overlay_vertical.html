@@ -169,8 +169,8 @@
     gap: 6px;
     pointer-events: none;
   }
-  #list.pos-right { right: 12px; }
-  #list.pos-left { left: 12px; }
+  #list.pos-right { right: 0; }
+  #list.pos-left { left: 0; }
   .c {
     background: rgba(0,0,0,var(--bg-op, 0.55));
     border-radius: 8px;
@@ -954,8 +954,8 @@
   <div id="hsSchedRows"></div>
 </div></div>
 <script>
-  // ?platform=tiktok を付けると、メインのふわっち/Kickとは独立してTikTokのコメントだけを表示できる
-  // (TikTokキャプチャ用ウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
+  // ?platform=fw/kick/twitcas を付けると、そのプラットフォームのコメントだけを独立して表示できる
+  // (別キャプチャウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
   const urlParams = new URLSearchParams(location.search);
   const platformOverride = urlParams.get('platform');
   if (urlParams.get('window') === '1') {
@@ -974,15 +974,17 @@
   let lastId = null;
   let lastPlatform = null;
 
-  // ===== コメント無言タイマー(60秒コメントなし→30秒カウントダウン、途中でコメントが来たら自動リセット) =====
+  // ===== コメント無言タイマー(30秒コメントなし→カウントダウン、途中でコメントが来たら自動リセット) =====
+  // ON/OFFとカウントダウン秒数はドックの設定から変更可能(pollStatusで反映)
   const QT_SILENCE_MS = 30000; // これだけ新規コメントが無いとカウントダウン開始
-  const QT_COUNTDOWN_SEC = 30; // カウントダウンの秒数
+  let QT_COUNTDOWN_SEC = 30; // カウントダウンの秒数(ドック設定で上書きされる)
+  let qtEnabled = true;
   let qtLastActivity = null; // コメントを一度も取得していない間はタイマー開始しない
   function qtNoteActivity() { qtLastActivity = Date.now(); }
   function qtTick() {
     const badge = document.getElementById('qtBadge');
     if (!badge) return;
-    if (qtLastActivity === null) {
+    if (!qtEnabled || qtLastActivity === null) {
       badge.classList.remove('show');
       return;
     }
@@ -1026,8 +1028,8 @@
   }
 
   // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、名前の前にプラットフォームロゴ風バッジを表示
-  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee', twitcas: '#00a8ff' };
-  const PLATFORM_BADGE_TEXT = { fw: 'ふ', kick: 'K', tiktok: 'T', twitcas: 'ツ' };
+  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', twitcas: '#00a8ff' };
+  const PLATFORM_BADGE_TEXT = { fw: 'ふ', kick: 'K', twitcas: 'ツ' };
 
   function addEntry(c) {
     const el = document.createElement('div');
@@ -1056,7 +1058,6 @@
       badge.style.fontSize = '0.72em';
       badge.style.fontWeight = '900';
       badge.style.lineHeight = '1';
-      badge.style.boxShadow = '0 1px 3px rgba(0,0,0,0.5)';
       nameRow.appendChild(badge);
     }
 
@@ -1748,6 +1749,10 @@
       rb.classList.add(posCls);
       updateStats(data);
       renderSchedule(data.scheduleByWeek, data.scheduleStyle, data.verticalPos, data.scheduleEnabled, data.scheduleDisplayWeek);
+      if (data.countdownEnabled !== undefined) qtEnabled = !!data.countdownEnabled;
+      if (Number.isFinite(Number(data.countdownSeconds)) && Number(data.countdownSeconds) > 0) {
+        QT_COUNTDOWN_SEC = Number(data.countdownSeconds);
+      }
       if (data.bgOpacity !== undefined) {
         document.documentElement.style.setProperty('--bg-op', (data.bgOpacity / 100).toFixed(2));
       }
