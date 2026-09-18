@@ -1267,6 +1267,7 @@ function twitcastingAuthHeaders() {
 }
 
 let twitcastingWarnedNoKey = false;
+let twitcastingLoggedRawComments = false; // コメントAPIの実レスポンス形式を一度だけログに出す(原因切り分け用)
 
 async function pollTwitCastingComments() {
   if (!config.twitcastingUser || fetchPaused.twitcas) {
@@ -1328,6 +1329,10 @@ async function pollTwitCastingComments() {
       return;
     }
     const cd = await cres.json();
+    if (!twitcastingLoggedRawComments) {
+      twitcastingLoggedRawComments = true;
+      console.log('[TwitCasting] comments API 生レスポンス(初回のみログ出力):', JSON.stringify(cd).slice(0, 1500));
+    }
     const comments = cd.comments || [];
     if (comments.length === 0) return;
 
