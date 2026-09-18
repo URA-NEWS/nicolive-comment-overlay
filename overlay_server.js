@@ -1321,8 +1321,17 @@ async function pollTwitCastingComments() {
     if (!twitcastingMovieId) return;
 
     // コメント取得(slice_idで前回取得以降の新着のみを取る)
-    const params = new URLSearchParams({ limit: '50', sort: 'old-to-new' });
-    if (twitcastingSliceId) params.set('slice_id', String(twitcastingSliceId));
+    // 実APIの挙動: slice_id未指定でsort=old-to-newを指定すると空配列が返る(全コメント数=all_countはあるのに comments:[] になる)ことを
+    // ログで確認済み。そのため、まだ基準(slice_id)が無い初回だけは sort=new-to-old で「直近のコメント」を取得して起点を作り、
+    // 以降の差分取得(slice_id指定あり)では old-to-new で新しい順に取得する。
+    const isBaseline = twitcastingSliceId === null;
+    const params = new URLSearchParams({ limit: '50' });
+    if (isBaseline) {
+      params.set('sort', 'new-to-old');
+    } else {
+      params.set('sort', 'old-to-new');
+      params.set('slice_id', String(twitcastingSliceId));
+    }
     const cres = await fetch(`https://apiv2.twitcasting.tv/movies/${twitcastingMovieId}/comments?${params.toString()}`, { headers });
     if (!cres.ok) {
       console.error('[TwitCasting] comments HTTP', cres.status, (await cres.text()).slice(0, 200));
@@ -1336,15 +1345,14 @@ async function pollTwitCastingComments() {
     const comments = cd.comments || [];
     if (comments.length === 0) return;
 
-    // sort=old-to-newで取得しているため、配列の最後の要素が最新コメント。
+    // old-to-newの場合は配列の最後の要素が最新、new-to-old(基準作成時)の場合は先頭が最新。
     // id自体が数値化できる保証がない(巨大な数値文字列だとNumber()変換で精度落ちする可能性もある)ため、
-    // 独自にmax値を計算せずAPIが返す順序をそのまま信用し、最後の要素のidをそのまま次回のslice_idに使う。
-    const lastComment = comments[comments.length - 1];
-    const lastId = lastComment && lastComment.id != null ? String(lastComment.id) : null;
+    // 独自にmax値を計算せずAPIが返す順序をそのまま信用し、最新コメントのidをそのまま次回のslice_idに使う。
+    const newestComment = isBaseline ? comments[0] : comments[comments.length - 1];
+    const lastId = newestComment && newestComment.id != null ? String(newestComment.id) : null;
 
-    if (twitcastingSliceId === null) {
+    if (isBaseline) {
       // 初回取得時は既存コメントを一気に「新着」として流さず、以降の差分取得の起点だけ作る
-      // (実APIのレスポンス形式が想定と違うと原因切り分けが必要になるため、一度だけ生データをログ出力する)
       console.log(`[TwitCasting] 初回コメント取得(基準作成): ${comments.length}件. サンプル: ${JSON.stringify(comments.slice(0, 2))}`);
       twitcastingSliceId = lastId;
       if (!twitcastingSliceId) {
