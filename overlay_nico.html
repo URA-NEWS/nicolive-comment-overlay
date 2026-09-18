@@ -973,8 +973,8 @@
 </div></div>
 <script>
   // ===== 設定 =====
-  // ?platform=tiktok を付けると、メインのふわっち/Kickとは独立してTikTokのコメントだけを表示できる
-  // (TikTokキャプチャ用ウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
+  // ?platform=fw/kick/twitcas を付けると、そのプラットフォームのコメントだけを独立して表示できる
+  // (別キャプチャウィンドウなど)。?window=1 で背景を黒にする(ウィンドウキャプチャ用)。
   const urlParams = new URLSearchParams(location.search);
   const platformOverride = urlParams.get('platform');
   if (urlParams.get('window') === '1') {
@@ -1120,7 +1120,7 @@
   }
 
   // 複数プラットフォーム同時取得時にコメビュ上で区別できるよう、プラットフォームごとに文字色を変える
-  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', tiktok: '#25f4ee', twitcas: '#00a8ff' };
+  const PLATFORM_COLORS = { fw: '#ff8c1a', kick: '#53fc18', twitcas: '#00a8ff' };
 
   function spawnComment(c) {
     const el = document.createElement('div');
