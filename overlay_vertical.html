@@ -178,6 +178,11 @@
     animation: slideIn 0.25s ease-out;
     word-break: break-word;
   }
+  /* 画面端にピッタリ接する側の角丸を潰す(角丸の隙間から背景が薄く透けて
+     線のように見えるのを防ぐため。左寄せ時は左側、右寄せ時は右側を直角に) */
+  #list.pos-left .c { border-radius: 0 8px 8px 0; }
+  #list.pos-right .c { border-radius: 8px 0 0 8px; }
+  #list.pos-left .c.item, #list.pos-right .c.item { border-radius: 8px; }
   .c.fade { transition: opacity 0.8s; opacity: 0; }
   .c .name {
     font-size: 18px;
@@ -798,15 +803,6 @@
   }
   .hsSchedOnLeft #hsSchedPanel { border-radius: 0 18px 18px 0; padding-right: 30px; }
   .hsSchedOnRight #hsSchedPanel { border-radius: 18px 0 0 18px; padding-left: 30px; }
-  #hsSchedPanel::before {
-    content: '';
-    position: absolute;
-    top: 0; bottom: 0;
-    width: 4px;
-    background: linear-gradient(180deg, currentColor, transparent 90%);
-  }
-  .hsSchedOnLeft #hsSchedPanel::before { right: 0; }
-  .hsSchedOnRight #hsSchedPanel::before { left: 0; }
   .hsSchedKicker {
     font-size: 0.6em;
     font-weight: 700;
