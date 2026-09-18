@@ -1360,10 +1360,12 @@
     if (rl.spinId !== rlLastSpinId) {
       rlLastSpinId = rl.spinId;
       if (hasResult) {
-        const elapsed = rl.spinStartedAt ? Math.max(0, Date.now() - rl.spinStartedAt) : rl.spinDurationMs;
-        if (rl.spinning && elapsed < rl.spinDurationMs) {
-          // 現在進行中のスピンを検知: 経過時間ぶんを差し引いてアニメを同期開始
-          rlRunSpinAnimation(rl.items, rl.resultIndex, rl.spinDurationMs, elapsed);
+        // ポーリング間隔(最大5秒)のせいでスピン開始から発見までにラグが生まれ、
+        // 経過時間ぶん差し引いて同期すると減速カーブの終盤にいきなり合流して
+        // 「ほぼ回転しない」ように見えていた。発見した時点でまだサーバー側が
+        // 回転中(spinning)なら、経過時間を無視して常にフル尺で演出する。
+        if (rl.spinning) {
+          rlRunSpinAnimation(rl.items, rl.resultIndex, rl.spinDurationMs, 0);
         } else {
           // 既に終わっているスピン(遅れて表示を開いた場合など): 結果だけ即座に反映
           rlSnapToResult(rl.items, rl.resultIndex);
