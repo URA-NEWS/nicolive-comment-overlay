@@ -884,6 +884,128 @@
   .hsSchedRow.hsSchedToday .hsSchedTime { background: rgba(255,255,255,0.24); border-color: currentColor; }
   .hsSchedRow .hsSchedText { opacity: 0.92; font-size: 0.95em; font-weight: 700; }
   .hsSchedRow.hsSchedEmpty { opacity: 0.4; }
+
+  /* ===== バトルゲージ ===== */
+  #battleBox {
+    position: fixed;
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(1180px, 94vw);
+    display: none;
+    z-index: 12;
+    pointer-events: none;
+  }
+  #btTopicRow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  #btTag {
+    font-size: 13px; font-weight: 900; letter-spacing: 0.18em;
+    color: #fff;
+    background: linear-gradient(90deg, #ff2d4b, #2b6cff);
+    padding: 3px 12px; border-radius: 999px;
+    box-shadow: 0 0 18px rgba(255,45,75,0.55);
+    white-space: nowrap;
+  }
+  #btTopicText {
+    font-size: 31px; font-weight: 900; color: #fff;
+    letter-spacing: 0.01em;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.95), 0 0 26px rgba(255,255,255,0.28);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 68%;
+  }
+  #btTimer {
+    font-size: 20px; font-weight: 900; color: #fff;
+    font-variant-numeric: tabular-nums;
+    background: rgba(8,8,10,0.85);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 999px; padding: 2px 12px;
+    min-width: 56px; text-align: center;
+  }
+  #btTimer.urgent { color: #ff3b5c; animation: btBlink 0.6s steps(2, start) infinite; }
+  #btTimer.ended { color: #ffd54a; }
+  @keyframes btBlink { 50% { opacity: 0.25; } }
+
+  #btGauge {
+    position: relative;
+    height: 46px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0b0d12;
+    display: flex;
+    box-shadow: 0 10px 34px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.1);
+  }
+  #btFillA, #btFillB {
+    position: relative;
+    height: 100%;
+    transition: width 0.6s cubic-bezier(0.2,0.9,0.3,1);
+  }
+  #btFillA { background: linear-gradient(90deg, #c1001e, #ff2d4b 45%, #ff8c1a); }
+  #btFillB { background: linear-gradient(90deg, #00d4ff, #2b6cff 55%, #0b2ea8); }
+  #btFillA::after, #btFillB::after {
+    content: ""; position: absolute; inset: 0;
+    background: repeating-linear-gradient(-45deg, rgba(255,255,255,0.10) 0 10px, rgba(255,255,255,0) 10px 20px);
+    background-size: 28px 100%;
+    animation: btFlow 1s linear infinite;
+  }
+  #btFillB::after { animation-direction: reverse; }
+  @keyframes btFlow { to { background-position: 28px 0; } }
+  #btFillA.hit, #btFillB.hit { animation: btHit 0.45s ease-out; }
+  @keyframes btHit { 0% { filter: brightness(2.3); } 100% { filter: none; } }
+
+  #btVs {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    transition: left 0.6s cubic-bezier(0.2,0.9,0.3,1);
+    z-index: 3;
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 900; color: #111;
+    background: linear-gradient(180deg, #fff, #d8dde6);
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.55), 0 0 26px rgba(255,255,255,0.75);
+  }
+  #btVs.clash { animation: btClash 0.45s ease-out; }
+  @keyframes btClash {
+    0%   { transform: translate(-50%, -50%) scale(1); }
+    40%  { transform: translate(-50%, -50%) scale(1.35); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+  }
+
+  #btSides { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; }
+  .btSide { display: flex; align-items: baseline; gap: 8px; max-width: 46%; transition: opacity 0.3s ease; }
+  .btSide.b { flex-direction: row-reverse; }
+  .btKey {
+    font-size: 15px; font-weight: 900; color: #fff;
+    width: 26px; height: 26px; border-radius: 7px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btSide.a .btKey { background: #ff2d4b; box-shadow: 0 0 16px rgba(255,45,75,0.7); }
+  .btSide.b .btKey { background: #2b6cff; box-shadow: 0 0 16px rgba(43,108,255,0.7); }
+  .btAns {
+    font-size: 19px; font-weight: 800; color: #fff;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .btNum {
+    font-size: 16px; font-weight: 900; color: #fff;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+  }
+  .btNum b { font-size: 22px; }
+  .btSide.win .btAns { color: #ffd54a; }
+  .btSide.lose { opacity: 0.45; }
+
+  #btResult {
+    display: none;
+    text-align: center; margin-top: 8px;
+    font-size: 26px; font-weight: 900; color: #ffd54a;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.9), 0 0 26px rgba(255,213,74,0.6);
+  }
+  #btResult.on { display: block; animation: btPop 0.5s cubic-bezier(0.2,0.9,0.3,1); }
+  @keyframes btPop { 0% { transform: scale(0.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 </style>
 </head>
 <body>
@@ -918,6 +1040,23 @@
   <div id="svProg"><div id="svProgBar"></div></div>
   <div id="svRows"></div>
   <div id="svTotal"></div>
+</div>
+<div id="battleBox">
+  <div id="btTopicRow">
+    <span id="btTag">BATTLE</span>
+    <span id="btTopicText"></span>
+    <span id="btTimer"></span>
+  </div>
+  <div id="btGauge">
+    <div id="btFillA" style="width:50%"></div>
+    <div id="btFillB" style="width:50%"></div>
+    <div id="btVs">VS</div>
+  </div>
+  <div id="btSides">
+    <div class="btSide a"><span class="btKey">A</span><span class="btAns" id="btAnsA"></span><span class="btNum" id="btNumA"><b>0</b>票</span></div>
+    <div class="btSide b"><span class="btKey">B</span><span class="btAns" id="btAnsB"></span><span class="btNum" id="btNumB"><b>0</b>票</span></div>
+  </div>
+  <div id="btResult"></div>
 </div>
 <div id="topicBar">
   <div id="topicLabel">トークテーマNOW</div>
@@ -1217,6 +1356,7 @@
     setStat('statTwitcasV', data.twitcastingViewerCount);
     refreshRows(data);
     updateSurvey(data.survey);
+    updateBattle(data.battle);
     updateTopic(data.topic);
     updateGoal(data.goal);
     updateQuiz(data.quiz);
@@ -1707,6 +1847,111 @@
       title.textContent = 'アンケート結果';
       prog.style.width = '0%';
       total.textContent = '総投票数 ' + sv.total;
+    }
+  }
+
+  // ===== バトルゲージ =====
+  let btData = null, btSyncAt = 0, btTicker = null, btVisible = false, btLastSeq = -1;
+
+  function btHit(id, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const c = cls || 'hit';
+    el.classList.remove(c);
+    void el.offsetWidth; // リフローさせて同じアニメを再生
+    el.classList.add(c);
+  }
+
+  function updateBattle(bt) {
+    const box = document.getElementById('battleBox');
+    if (!box) return;
+    if (!bt) {
+      box.style.display = 'none';
+      btVisible = false;
+      btData = null;
+      btLastSeq = -1;
+      if (btTicker) { clearInterval(btTicker); btTicker = null; }
+      return;
+    }
+    const prev = btData;
+    btData = bt;
+    btSyncAt = Date.now();
+    if (!btVisible) {
+      box.style.display = 'block';
+      btVisible = true;
+      btLastSeq = -1;
+    }
+    // 統計バーの高さに合わせて真下に配置(段数が変わっても重ならない)
+    const sb = document.getElementById('statsBar');
+    if (sb && sb.offsetHeight) box.style.top = (sb.offsetHeight + 8) + 'px';
+
+    // 新しい票が入った側を光らせる
+    if (prev && btLastSeq >= 0 && bt.seq > btLastSeq) {
+      const gainA = bt.countA - prev.countA;
+      const gainB = bt.countB - prev.countB;
+      if (gainA > 0) btHit('btFillA');
+      if (gainB > 0) btHit('btFillB');
+      if (gainA > 0 || gainB > 0) btHit('btVs', 'clash');
+    }
+    btLastSeq = bt.seq;
+
+    if (!btTicker) btTicker = setInterval(btTick, 100);
+    btTick();
+  }
+
+  function btTick() {
+    const bt = btData;
+    if (!bt) return;
+    document.getElementById('btTopicText').textContent = bt.topic || '';
+    document.getElementById('btAnsA').textContent = bt.answerA || '';
+    document.getElementById('btAnsB').textContent = bt.answerB || '';
+    document.getElementById('btNumA').innerHTML = '<b>' + bt.countA + '</b>票 / ' + bt.pctA + '%';
+    document.getElementById('btNumB').innerHTML = '<b>' + bt.countB + '</b>票 / ' + bt.pctB + '%';
+    document.getElementById('btFillA').style.width = bt.pctA + '%';
+    document.getElementById('btFillB').style.width = bt.pctB + '%';
+    document.getElementById('btVs').style.left = bt.pctA + '%';
+
+    const timer = document.getElementById('btTimer');
+    const result = document.getElementById('btResult');
+    const sideA = document.querySelector('#btSides .btSide.a');
+    const sideB = document.querySelector('#btSides .btSide.b');
+
+    if (bt.standby) {
+      // 未開始: 議題とA/Bだけ見せる(タイマー・票数・勝敗は出さない)
+      timer.style.display = 'none';
+      timer.classList.remove('urgent', 'ended');
+      document.getElementById('btNumA').innerHTML = '';
+      document.getElementById('btNumB').innerHTML = '';
+      result.classList.remove('on');
+      result.textContent = '';
+      sideA.classList.remove('win', 'lose');
+      sideB.classList.remove('win', 'lose');
+    } else if (bt.active) {
+      timer.style.display = '';
+      const elapsed = (Date.now() - btSyncAt) / 1000;
+      const remain = Math.max(0, bt.remainSec - elapsed);
+      timer.textContent = Math.ceil(remain);
+      timer.classList.remove('ended');
+      timer.classList.toggle('urgent', remain <= 10);
+      result.classList.remove('on');
+      result.textContent = '';
+      sideA.classList.remove('win', 'lose');
+      sideB.classList.remove('win', 'lose');
+    } else {
+      timer.style.display = '';
+      timer.textContent = '結果';
+      timer.classList.add('ended');
+      timer.classList.remove('urgent');
+      const w = bt.winner;
+      sideA.classList.toggle('win', w === 'A');
+      sideA.classList.toggle('lose', w === 'B');
+      sideB.classList.toggle('win', w === 'B');
+      sideB.classList.toggle('lose', w === 'A');
+      const txt = w === 'A' ? ('A「' + bt.answerA + '」の勝ち！')
+        : w === 'B' ? ('B「' + bt.answerB + '」の勝ち！')
+        : '引き分け！';
+      if (result.textContent !== txt) result.textContent = txt;
+      if (!result.classList.contains('on')) result.classList.add('on');
     }
   }
 

@@ -225,6 +225,7 @@ let itemImageMap = {};
 function addComment(obj) {
   collectVote(obj.name, obj.text);
   collectQuizVote(obj.name, obj.text);
+  collectBattleVote(obj.name, obj.text);
   // 配信統計: コメントが多く流れたタイミングを後で特定するため、集計中の配信があれば1分単位でカウント(プラットフォーム別)
   if (currentStream && !statsPaused) {
     currentCommentTick.total++;
@@ -321,6 +322,112 @@ function surveyState() {
     finished: survey.finished,
     durationSec: survey.durationSec,
     remainSec: survey.active ? Math.max(0, Math.ceil((survey.endsAt - Date.now()) / 1000)) : 0,
+  };
+}
+
+
+// ============================================================
+// バトル機能(A vs B ゲージ)
+// ============================================================
+let battle = null; // {topic, answerA, answerB, startedAt, endsAt, votes:{name:'A'|'B'}, active, finished, standby, seq}
+
+// 集計を始めずに議題とA/Bだけ先に出す(スタンバイ表示)
+function showBattle(topic, answerA, answerB, durationSec) {
+  const t = String(topic || '').trim();
+  const a = String(answerA || '').trim();
+  const b = String(answerB || '').trim();
+  if (!a || !b) return false;
+  battle = {
+    topic: t.slice(0, 200),
+    answerA: a.slice(0, 100),
+    answerB: b.slice(0, 100),
+    startedAt: 0,
+    durationSec: Number(durationSec) > 0 ? Number(durationSec) : 60,
+    endsAt: 0,
+    votes: {},
+    active: false,
+    finished: false,
+    standby: true,
+    seq: 0,
+  };
+  console.log(`[バトル] 表示(スタンバイ): ${battle.topic} | A=${battle.answerA} / B=${battle.answerB}`);
+  return true;
+}
+
+function startBattle(topic, answerA, answerB, durationSec) {
+  const t = String(topic || '').trim();
+  const a = String(answerA || '').trim();
+  const b = String(answerB || '').trim();
+  if (!a || !b) return false;
+  const dur = Number(durationSec) > 0 ? Number(durationSec) : 60;
+  battle = {
+    topic: t.slice(0, 200),
+    answerA: a.slice(0, 100),
+    answerB: b.slice(0, 100),
+    startedAt: Date.now(),
+    durationSec: dur,
+    endsAt: Date.now() + dur * 1000,
+    votes: {},
+    active: true,
+    finished: false,
+    standby: false,
+    seq: 0,
+  };
+  console.log(`[バトル] 開始: ${battle.topic} | A=${battle.answerA} / B=${battle.answerB} (${dur}秒)`);
+  return true;
+}
+
+function stopBattle() {
+  // スタンバイ表示中(未開始)は締め切らない
+  if (!battle || battle.standby) return;
+  battle.active = false;
+  battle.finished = true;
+}
+
+function clearBattle() {
+  battle = null;
+}
+
+// コメントから A / B を拾う(1人1票・先着のみ有効)
+function collectBattleVote(name, text) {
+  if (!battle || !battle.active) return;
+  if (Date.now() > battle.endsAt) { stopBattle(); return; }
+  let t = String(text || '').trim().toUpperCase();
+  // 全角英字を半角に
+  t = t.replace(/[Ａ-Ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (!/^[AB]$/.test(t)) return;
+  const key = String(name || '?');
+  if (battle.votes[key] !== undefined) return; // 1人1票
+  battle.votes[key] = t;
+  battle.seq++; // 演出用: 新しい票が入るたびに増える
+}
+
+function battleState() {
+  if (!battle) return null;
+  if (battle.active && Date.now() > battle.endsAt) stopBattle();
+  let a = 0, b = 0;
+  for (const v of Object.values(battle.votes)) {
+    if (v === 'A') a++;
+    else if (v === 'B') b++;
+  }
+  const total = a + b;
+  const pctA = total ? Math.round((a / total) * 100) : 50;
+  return {
+    topic: battle.topic,
+    answerA: battle.answerA,
+    answerB: battle.answerB,
+    countA: a,
+    countB: b,
+    total,
+    pctA,
+    pctB: total ? 100 - pctA : 50,
+    active: battle.active,
+    finished: battle.finished,
+    standby: !!battle.standby,
+    durationSec: battle.durationSec,
+    remainSec: battle.active ? Math.max(0, Math.ceil((battle.endsAt - Date.now()) / 1000)) : 0,
+    seq: battle.seq,
+    winner: battle.finished ? (a > b ? 'A' : (b > a ? 'B' : 'DRAW')) : null,
   };
 }
 
@@ -1511,6 +1618,7 @@ check();
       kickFollowerCount,
       kickViewerCount,
       survey: surveyState(),
+      battle: battleState(),
       quiz: quizState(),
       roulette: rouletteState(),
       scheduleEnabled: config.scheduleEnabled,
@@ -2030,6 +2138,50 @@ check();
   // ---- アンケート: 非表示(消す) ----
   if (url.pathname === '/api/overlay/survey/clear' && req.method === 'POST') {
     clearSurvey();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // ---- バトル: 表示(集計せず議題とA/Bだけ出す) ----
+  if (url.pathname === '/api/overlay/battle/show' && req.method === 'POST') {
+    const body = await readBody(req);
+    const ok = showBattle(body.topic, body.answerA, body.answerB, Number(body.duration) || 60);
+    if (!ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'A・Bのアンサーを両方入力してください' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, battle: battleState() }));
+    return;
+  }
+
+  // ---- バトル: 開始 ----
+  if (url.pathname === '/api/overlay/battle/start' && req.method === 'POST') {
+    const body = await readBody(req);
+    const ok = startBattle(body.topic, body.answerA, body.answerB, Number(body.duration) || 60);
+    if (!ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'A・Bのアンサーを両方入力してください' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, battle: battleState() }));
+    return;
+  }
+
+  // ---- バトル: 締切 ----
+  if (url.pathname === '/api/overlay/battle/stop' && req.method === 'POST') {
+    stopBattle();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, battle: battleState() }));
+    return;
+  }
+
+  // ---- バトル: 非表示(消す) ----
+  if (url.pathname === '/api/overlay/battle/clear' && req.method === 'POST') {
+    clearBattle();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     return;

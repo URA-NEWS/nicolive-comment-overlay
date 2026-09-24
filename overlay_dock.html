@@ -386,6 +386,39 @@
 <div class="hint">視聴者がコメントで「A」「B」「C」「D」と投稿すると集計されます（1人1票・入力した選択肢のみ有効）</div>
 </div>
 
+<h2 class="acc">バトル</h2>
+<div class="accBody"><label>議題</label>
+<input type="text" id="btTopic" placeholder="例: きのこ派 vs たけのこ派">
+<label>A のアンサー</label>
+<input type="text" id="btA" placeholder="例: きのこ">
+<label>B のアンサー</label>
+<input type="text" id="btB" placeholder="例: たけのこ">
+<div class="speed-row" style="gap:8px;align-items:center;margin-top:6px">
+  <label style="margin:0">制限時間</label>
+  <input type="number" id="btDur" value="60" min="10" max="600" style="width:80px;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:4px;color:#fff">
+  <span style="color:#aaa">秒</span>
+</div>
+<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+  <button class="small" onclick="btShow()">表示</button>
+  <button onclick="btStart()">開始</button>
+  <button class="small" onclick="btStop()">締切</button>
+  <button class="small" onclick="btClear()">非表示</button>
+</div>
+<div class="msg" id="btMsg"></div>
+<div id="btProgWrap" style="display:none;margin-top:10px">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+    <span style="font-size:12px;color:#ff3b5c;font-weight:700">バトル中</span>
+    <span id="btProgTime" style="font-size:20px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums"></span>
+  </div>
+  <div style="height:8px;background:#1a1a1a;border-radius:999px;overflow:hidden;display:flex">
+    <div id="btProgA" style="height:100%;width:50%;background:linear-gradient(90deg,#ff2d4b,#ff8c1a);transition:width 0.35s cubic-bezier(.2,.9,.3,1)"></div>
+    <div id="btProgB" style="height:100%;width:50%;background:linear-gradient(90deg,#00d4ff,#2b6cff);transition:width 0.35s cubic-bezier(.2,.9,.3,1)"></div>
+  </div>
+</div>
+<div id="btStatus" style="margin-top:8px;font-size:12px;color:#888;"></div>
+<div class="hint">「表示」は集計せずに議題とA/Bだけ先に出します（ゲージは50:50・タイマーなし）。そのまま「開始」でカウントダウンと集計がスタートします。<br>視聴者がコメントで「A」「B」と投稿するとゲージに反映されます（1人1票・全角ＡＢも可）</div>
+</div>
+
 <h2 class="acc">ルーレット</h2>
 <div class="accBody">
 <label>項目を追加（<span id="rlCount">0</span>/<span id="rlMax">30</span>）</label>
@@ -630,6 +663,7 @@
       goalRender(data);
       topicRender(data);
       svRender(data.survey);
+      btRender(data.battle);
       rlRender(data.roulette);
       hsRenderRecording(data.statsRecording);
 
@@ -1340,6 +1374,113 @@
       document.getElementById('svMsg').textContent = '非表示にしました';
       document.getElementById('svMsg').className = 'msg';
     } catch (e) {}
+  }
+
+  // ---------- バトル ----------
+  async function btShow() {
+    const topic = document.getElementById('btTopic').value.trim();
+    const answerA = document.getElementById('btA').value.trim();
+    const answerB = document.getElementById('btB').value.trim();
+    const duration = Number(document.getElementById('btDur').value) || 60;
+    const msg = document.getElementById('btMsg');
+    if (!answerA || !answerB) {
+      msg.textContent = 'A と B のアンサーは必須です';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      await fetch('/api/overlay/battle/show', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, answerA, answerB, duration }),
+      });
+      msg.textContent = '表示しました（まだ集計していません）';
+      msg.className = 'msg ok';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function btStart() {
+    const topic = document.getElementById('btTopic').value.trim();
+    const answerA = document.getElementById('btA').value.trim();
+    const answerB = document.getElementById('btB').value.trim();
+    const duration = Number(document.getElementById('btDur').value) || 60;
+    const msg = document.getElementById('btMsg');
+    if (!answerA || !answerB) {
+      msg.textContent = 'A と B のアンサーは必須です';
+      msg.className = 'msg err';
+      return;
+    }
+    try {
+      await fetch('/api/overlay/battle/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, answerA, answerB, duration }),
+      });
+      msg.textContent = 'バトルを開始しました';
+      msg.className = 'msg ok';
+    } catch (e) {
+      msg.textContent = '通信エラー';
+      msg.className = 'msg err';
+    }
+  }
+
+  async function btStop() {
+    try {
+      await fetch('/api/overlay/battle/stop', { method: 'POST' });
+      document.getElementById('btMsg').textContent = '締め切りました';
+      document.getElementById('btMsg').className = 'msg ok';
+    } catch (e) {}
+  }
+
+  async function btClear() {
+    try {
+      await fetch('/api/overlay/battle/clear', { method: 'POST' });
+      document.getElementById('btMsg').textContent = '非表示にしました';
+      document.getElementById('btMsg').className = 'msg';
+    } catch (e) {}
+  }
+
+  let btLocal = null, btLocalAt = 0, btDockTicker = null;
+  function btRender(bt) {
+    const el = document.getElementById('btStatus');
+    const wrap = document.getElementById('btProgWrap');
+    if (!el || !wrap) return;
+    if (!bt) {
+      el.textContent = 'バトルは表示されていません';
+      wrap.style.display = 'none';
+      btLocal = null;
+      if (btDockTicker) { clearInterval(btDockTicker); btDockTicker = null; }
+      return;
+    }
+    btLocal = bt;
+    btLocalAt = Date.now();
+    document.getElementById('btProgA').style.width = bt.pctA + '%';
+    document.getElementById('btProgB').style.width = bt.pctB + '%';
+    const head = bt.topic ? (bt.topic + ' / ') : '';
+    if (bt.standby) {
+      el.textContent = head + 'A「' + bt.answerA + '」 vs B「' + bt.answerB + '」／表示中（未開始・集計していません）';
+    } else {
+      el.textContent = head + 'A「' + bt.answerA + '」' + bt.countA + '票 vs B「' + bt.answerB + '」' + bt.countB + '票（計' + bt.total + '票）'
+        + (bt.active ? '' : (bt.winner === 'A' ? ' → Aの勝ち' : bt.winner === 'B' ? ' → Bの勝ち' : ' → 引き分け'));
+    }
+    if (bt.active) {
+      wrap.style.display = '';
+      document.getElementById('btProgTime').textContent = bt.remainSec + '秒';
+      if (!btDockTicker) {
+        btDockTicker = setInterval(() => {
+          if (!btLocal || !btLocal.active) return;
+          const rem = Math.max(0, btLocal.remainSec - Math.floor((Date.now() - btLocalAt) / 1000));
+          const t = document.getElementById('btProgTime');
+          if (t) { t.textContent = rem + '秒'; t.style.color = rem <= 10 ? '#ff3b5c' : '#fff'; }
+        }, 250);
+      }
+    } else {
+      wrap.style.display = 'none';
+      if (btDockTicker) { clearInterval(btDockTicker); btDockTicker = null; }
+    }
   }
 
   // ---------- ルーレット ----------
