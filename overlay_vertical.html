@@ -872,10 +872,11 @@
 
   /* ===== バトルゲージ ===== */
   #battleBox {
+    /* コメント欄に重ならないよう、空いている側の上部いっぱいに置く（位置はJSで決める） */
     position: fixed;
-    top: 62px;
-    left: 12px;
-    width: 390px;
+    top: 10px;
+    left: 412px;
+    right: 12px;
     display: none;
     z-index: 12;
     pointer-events: none;
@@ -884,30 +885,30 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    margin-bottom: 5px;
+    gap: 10px;
+    margin-bottom: 7px;
   }
   #btTag {
-    font-size: 11px; font-weight: 900; letter-spacing: 0.16em;
+    font-size: 13px; font-weight: 900; letter-spacing: 0.18em;
     color: #fff;
     background: linear-gradient(90deg, #ff2d4b, #2b6cff);
-    padding: 2px 9px; border-radius: 999px;
-    box-shadow: 0 0 16px rgba(255,45,75,0.55);
+    padding: 3px 12px; border-radius: 999px;
+    box-shadow: 0 0 18px rgba(255,45,75,0.55);
     white-space: nowrap;
   }
   #btTopicText {
-    font-size: 22px; font-weight: 900; color: #fff;
+    font-size: 30px; font-weight: 900; color: #fff;
     letter-spacing: 0.01em;
-    text-shadow: 0 2px 12px rgba(0,0,0,0.95), 0 0 20px rgba(255,255,255,0.28);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.95), 0 0 26px rgba(255,255,255,0.28);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 66%;
   }
   #btTimer {
-    font-size: 16px; font-weight: 900; color: #fff;
+    font-size: 22px; font-weight: 900; color: #fff;
     font-variant-numeric: tabular-nums;
     background: rgba(8,8,10,0.85);
     border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 999px; padding: 1px 9px;
-    min-width: 44px; text-align: center;
+    border-radius: 999px; padding: 2px 13px;
+    min-width: 58px; text-align: center;
   }
   #btTimer.urgent { color: #ff3b5c; animation: btBlink 0.6s steps(2, start) infinite; }
   #btTimer.ended { color: #ffd54a; }
@@ -915,12 +916,12 @@
 
   #btGauge {
     position: relative;
-    height: 34px;
-    border-radius: 10px;
+    height: 48px;
+    border-radius: 12px;
     overflow: hidden;
     background: #0b0d12;
     display: flex;
-    box-shadow: 0 8px 26px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.1);
+    box-shadow: 0 10px 34px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.1);
   }
   #btFillA, #btFillB {
     position: relative;
@@ -945,11 +946,11 @@
     transform: translate(-50%, -50%);
     transition: left 0.6s cubic-bezier(0.2,0.9,0.3,1);
     z-index: 3;
-    width: 32px; height: 32px; border-radius: 50%;
+    width: 46px; height: 46px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 900; color: #111;
+    font-size: 18px; font-weight: 900; color: #111;
     background: linear-gradient(180deg, #fff, #d8dde6);
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.55), 0 0 20px rgba(255,255,255,0.75);
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.55), 0 0 26px rgba(255,255,255,0.75);
   }
   #btVs.clash { animation: btClash 0.45s ease-out; }
   @keyframes btClash {
@@ -958,35 +959,35 @@
     100% { transform: translate(-50%, -50%) scale(1); }
   }
 
-  #btSides { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; }
-  .btSide { display: flex; align-items: baseline; gap: 6px; max-width: 47%; transition: opacity 0.3s ease; }
+  #btSides { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; }
+  .btSide { display: flex; align-items: baseline; gap: 8px; max-width: 47%; transition: opacity 0.3s ease; }
   .btSide.b { flex-direction: row-reverse; }
   .btKey {
-    font-size: 12px; font-weight: 900; color: #fff;
-    width: 20px; height: 20px; border-radius: 6px; flex: none;
+    font-size: 16px; font-weight: 900; color: #fff;
+    width: 28px; height: 28px; border-radius: 7px; flex: none;
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .btSide.a .btKey { background: #ff2d4b; box-shadow: 0 0 14px rgba(255,45,75,0.7); }
-  .btSide.b .btKey { background: #2b6cff; box-shadow: 0 0 14px rgba(43,108,255,0.7); }
+  .btSide.a .btKey { background: #ff2d4b; box-shadow: 0 0 16px rgba(255,45,75,0.7); }
+  .btSide.b .btKey { background: #2b6cff; box-shadow: 0 0 16px rgba(43,108,255,0.7); }
   .btAns {
-    font-size: 14px; font-weight: 800; color: #fff;
+    font-size: 21px; font-weight: 800; color: #fff;
     text-shadow: 0 2px 8px rgba(0,0,0,0.9);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .btNum {
-    font-size: 12px; font-weight: 900; color: #fff;
+    font-size: 17px; font-weight: 900; color: #fff;
     font-variant-numeric: tabular-nums; white-space: nowrap;
     text-shadow: 0 2px 8px rgba(0,0,0,0.9);
   }
-  .btNum b { font-size: 17px; }
+  .btNum b { font-size: 24px; }
   .btSide.win .btAns { color: #ffd54a; }
   .btSide.lose { opacity: 0.45; }
 
   #btResult {
     display: none;
-    text-align: center; margin-top: 6px;
-    font-size: 19px; font-weight: 900; color: #ffd54a;
-    text-shadow: 0 2px 12px rgba(0,0,0,0.9), 0 0 22px rgba(255,213,74,0.6);
+    text-align: center; margin-top: 8px;
+    font-size: 27px; font-weight: 900; color: #ffd54a;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.9), 0 0 26px rgba(255,213,74,0.6);
   }
   #btResult.on { display: block; animation: btPop 0.5s cubic-bezier(0.2,0.9,0.3,1); }
   @keyframes btPop { 0% { transform: scale(0.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -1794,6 +1795,31 @@
     el.classList.add(c);
   }
 
+  // コメント欄・統計バーに重ならないよう、空いている側の上部いっぱいに置く
+  function btPlace(box) {
+    const vw = window.innerWidth || 1280;
+    let L = null, R = null;
+    ['statsBar', 'list'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      if (L === null || r.left < L) L = r.left;
+      if (R === null || r.right > R) R = r.right;
+    });
+    box.style.top = '10px';
+    if (L === null) { box.style.left = '12px'; box.style.right = '12px'; return; }
+    if ((L + R) / 2 < vw / 2) {
+      // コメント欄が左 → バトルは右の空きへ
+      box.style.left = Math.round(R + 12) + 'px';
+      box.style.right = '12px';
+    } else {
+      // コメント欄が右 → バトルは左の空きへ
+      box.style.left = '12px';
+      box.style.right = Math.round(vw - L + 12) + 'px';
+    }
+  }
+
   function updateBattle(bt) {
     const box = document.getElementById('battleBox');
     if (!box) return;
@@ -1813,14 +1839,7 @@
       btVisible = true;
       btLastSeq = -1;
     }
-    // 統計バーの位置と幅に合わせる(左右設定・段数が変わっても重ならない)
-    const sb = document.getElementById('statsBar');
-    if (sb && sb.offsetHeight) {
-      const r = sb.getBoundingClientRect();
-      box.style.top = (r.bottom + 8) + 'px';
-      box.style.left = r.left + 'px';
-      box.style.width = r.width + 'px';
-    }
+    btPlace(box);
 
     // 新しい票が入った側を光らせる
     if (prev && btLastSeq >= 0 && bt.seq > btLastSeq) {
