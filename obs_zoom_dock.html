@@ -332,7 +332,7 @@ function draw(){
 
 /* 範囲を配信画面の縦横比に合わせ、ソース内に収める */
 function fitRegion(r){
-  const A = base ? base.box.w / base.box.h : canvasW / canvasH;
+  const A = base ? base.region.w / base.region.h : canvasW / canvasH;
   let { w, h } = r; const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   if(w / h > A) h = w / A; else w = h * A;
   const minW = Math.max(40, srcW / 20);
@@ -376,11 +376,12 @@ function tfFor(r){
   const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
   const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
   const B = base ? base.box : { x: 0, y: 0, w: canvasW, h: canvasH };
-  const s = Math.min(B.w / vw, B.h / vh);
+  // 縦横それぞれ元の枠にぴったり合わせる＝元の縦横比・伸縮をそのまま維持
+  const sx = B.w / vw, sy = B.h / vh;
   return {
     cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb,
-    scaleX: s, scaleY: s,
-    positionX: B.x + (B.w - vw * s) / 2, positionY: B.y + (B.h - vh * s) / 2,
+    scaleX: sx, scaleY: sy,
+    positionX: B.x, positionY: B.y,
     alignment: 5, rotation: 0, boundsType: 'OBS_BOUNDS_NONE'
   };
 }
