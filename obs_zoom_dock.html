@@ -189,11 +189,13 @@ function connect(){
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
     if(m.op === 0){
-      const d = { rpcVersion: 1, eventSubscriptions: 0 };
+      const d = { rpcVersion: 1, eventSubscriptions: 4 | 8 | 128 | 1024 };
       if(m.d.authentication) d.authentication = makeAuth(cfg.pass, m.d.authentication.salt, m.d.authentication.challenge);
       ws.send(JSON.stringify({ op: 1, d }));
     }else if(m.op === 2){
       connected = true; setStatus('接続済み', 'ok'); $('conn').classList.add('hide'); onConnected();
+    }else if(m.op === 5){
+      onObsEvent(m.d.eventType, m.d.eventData || {});
     }else if(m.op === 7){
       const p = pending.get(m.d.requestId); if(!p) return;
       pending.delete(m.d.requestId);
@@ -222,15 +224,64 @@ async function onConnected(){
   try{
     const v = await req('GetVideoSettings');
     canvasW = v.baseWidth; canvasH = v.baseHeight;
+    try{ studioMode = !!(await req('GetStudioModeEnabled')).studioModeEnabled; }catch(e){}
     await loadScenes();
   }catch(e){ showErr(e.message); }
+}
+
+/* ---------- OBS側の変更をリアルタイムに反映 ---------- */
+let syncTimer = null, studioMode = false;
+function scheduleSync(){ clearTimeout(syncTimer); syncTimer = setTimeout(() => syncLists().catch(() => {}), 150); }
+async function syncLists(){
+  if(!connected) return;
+  const r = await req('GetSceneList');
+  const names = r.scenes.map(s => s.sceneName).reverse();
+  $('selScene').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
+  if(!names.includes(scene)) scene = (studioMode && r.currentPreviewSceneName) || r.currentProgramSceneName;
+  $('selScene').value = scene;
+  await loadItems(true);
+  lastSizeCheck = 0;
+}
+async function followScene(name){
+  if(!name || name === scene || busyCount) return;
+  scene = name; LS.set('zoomdock.scene', scene); $('selScene').value = scene;
+  await loadItems();
+}
+async function onObsEvent(type, d){
+  try{
+    switch(type){
+      case 'CurrentProgramSceneChanged': if(!studioMode) await followScene(d.sceneName); break;
+      case 'CurrentPreviewSceneChanged': if(studioMode) await followScene(d.sceneName); break;
+      case 'StudioModeStateChanged': studioMode = !!d.studioModeEnabled; break;
+      case 'SceneItemSelected': {
+        // OBSでソースを選択したら、ドックの拡大対象もそのソースに切り替える
+        let it = itemList.find(i => i.scene === d.sceneName && i.sceneItemId === d.sceneItemId);
+        if(!it && [...$('selScene').options].some(o => o.value === d.sceneName)){
+          scene = d.sceneName; LS.set('zoomdock.scene', scene); $('selScene').value = scene;
+          itemList = await listItems(); it = itemList.find(i => i.scene === d.sceneName && i.sceneItemId === d.sceneItemId);
+          $('selItem').innerHTML = itemList.map(i => `<option value="${esc(optVal(i))}">${esc(i.label)}</option>`).join('');
+        }
+        if(it && (!item || optVal(it) !== optVal(item))){ $('selItem').value = optVal(it); await selectItem(it); }
+        break;
+      }
+      case 'SceneCreated': case 'SceneRemoved': case 'SceneNameChanged': case 'SceneListChanged':
+      case 'SceneItemCreated': case 'SceneItemRemoved': case 'SceneItemListReindexed':
+      case 'InputNameChanged': case 'InputCreated': case 'InputRemoved':
+        if(type === 'SceneNameChanged' && d.oldSceneName === scene) scene = d.sceneName;
+        if(type === 'InputNameChanged' && item && item.sourceName === d.oldInputName) item.sourceName = d.inputName;
+        scheduleSync(); break;
+      case 'InputSettingsChanged': case 'SceneItemEnableStateChanged':
+        lastSizeCheck = 0; break;
+    }
+  }catch(e){}
 }
 
 async function loadScenes(){
   const r = await req('GetSceneList');
   const names = r.scenes.map(s => s.sceneName).reverse();
   const saved = LS.get('zoomdock.scene', '');
-  const pick = names.includes(saved) ? saved : r.currentProgramSceneName;
+  const live = (studioMode && r.currentPreviewSceneName) || r.currentProgramSceneName;
+  const pick = names.includes(live) ? live : (names.includes(saved) ? saved : names[0]);
   $('selScene').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
   $('selScene').value = pick;
   scene = pick;
@@ -256,7 +307,7 @@ async function listItems(){
   return out;
 }
 let itemList = [];
-const optVal = i => i.scene + '\u0000' + i.sceneItemId;
+const optVal = i => i.sceneItemId + '@' + i.scene;
 async function loadItems(keepCurrent){
   itemList = await listItems();
   $('selItem').innerHTML = itemList.map(i => `<option value="${esc(optVal(i))}">${esc(i.label)}</option>`).join('');
