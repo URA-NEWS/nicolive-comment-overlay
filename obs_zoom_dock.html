@@ -254,7 +254,39 @@ async function selectItem(it){
 async function updateSrcSize(){
   const t = (await req('GetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
   srcW = t.sourceWidth; srcH = t.sourceHeight;
+  const st = item ? LS.get(origKey(), null) : null;
+  base = computeBase(st ? st.tf : t);
   return t;
+}
+
+/* 元の配置から「画面上の表示枠」と「表示中のソース範囲」を求める（拡大はこの枠の中・この比率で行う） */
+let base = null;
+function computeBase(t){
+  const sw = t.sourceWidth, sh = t.sourceHeight;
+  const cl = t.cropLeft || 0, cr = t.cropRight || 0, ct = t.cropTop || 0, cb = t.cropBottom || 0;
+  const cw = Math.max(1, sw - cl - cr), ch = Math.max(1, sh - ct - cb);
+  const region = { x: cl, y: ct, w: cw, h: ch };
+  const place = (w, h, align) => ({
+    x: t.positionX - (align & 1 ? 0 : align & 2 ? w : w / 2),
+    y: t.positionY - (align & 4 ? 0 : align & 8 ? h : h / 2)
+  });
+  let box;
+  if(!t.boundsType || t.boundsType === 'OBS_BOUNDS_NONE'){
+    const w = cw * Math.abs(t.scaleX), h = ch * Math.abs(t.scaleY);
+    box = { ...place(w, h, t.alignment), w, h };
+  }else{
+    const bw = t.boundsWidth, bh = t.boundsHeight, b = place(bw, bh, t.alignment);
+    let w = bw, h = bh;
+    if(t.boundsType === 'OBS_BOUNDS_SCALE_INNER'){ const k = Math.min(bw / cw, bh / ch); w = cw * k; h = ch * k; }
+    else if(t.boundsType === 'OBS_BOUNDS_SCALE_TO_WIDTH'){ w = bw; h = ch * bw / cw; }
+    else if(t.boundsType === 'OBS_BOUNDS_SCALE_TO_HEIGHT'){ h = bh; w = cw * bh / ch; }
+    else if(t.boundsType === 'OBS_BOUNDS_MAX_ONLY'){ const k = Math.min(1, bw / cw, bh / ch); w = cw * k; h = ch * k; }
+    else if(t.boundsType === 'OBS_BOUNDS_SCALE_OUTER'){ w = bw; h = bh; region.w = Math.min(cw, bw / Math.max(bw / cw, bh / ch)); region.h = Math.min(ch, bh / Math.max(bw / cw, bh / ch)); region.x = cl + (cw - region.w) / 2; region.y = ct + (ch - region.h) / 2; }
+    const ba = t.boundsAlignment || 0;
+    box = { x: b.x + (ba & 1 ? 0 : ba & 2 ? bw - w : (bw - w) / 2), y: b.y + (ba & 4 ? 0 : ba & 8 ? bh - h : (bh - h) / 2), w, h };
+  }
+  if(!(box.w > 0 && box.h > 0)) box = { x: 0, y: 0, w: canvasW, h: canvasH };
+  return { box, region };
 }
 async function refreshPreview(){
   if(!item || !connected) return;
@@ -294,13 +326,13 @@ function draw(){
     ctx.fillRect(0, y, x, h); ctx.fillRect(x + w, y, rect.width - x - w, h);
     ctx.strokeStyle = '#3ea6ff'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
     ctx.fillStyle = '#3ea6ff'; ctx.font = 'bold 12px system-ui';
-    ctx.fillText('×' + (srcW / sel.w).toFixed(1), x + 4, y + 14);
+    ctx.fillText('×' + (fullRegion().w / sel.w).toFixed(1), x + 4, y + 14);
   }
 }
 
 /* 範囲を配信画面の縦横比に合わせ、ソース内に収める */
 function fitRegion(r){
-  const A = canvasW / canvasH;
+  const A = base ? base.box.w / base.box.h : canvasW / canvasH;
   let { w, h } = r; const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   if(w / h > A) h = w / A; else w = h * A;
   const minW = Math.max(40, srcW / 20);
@@ -311,7 +343,7 @@ function fitRegion(r){
   const y = Math.min(Math.max(0, cy - h / 2), srcH - h);
   return { x, y, w, h };
 }
-const fullRegion = () => ({ x: 0, y: 0, w: srcW, h: srcH });
+const fullRegion = () => base ? { ...base.region } : { x: 0, y: 0, w: srcW, h: srcH };
 
 function evToSrc(ev){
   const rect = $('pvCv').getBoundingClientRect();
@@ -330,7 +362,7 @@ window.addEventListener('mouseup', ev => {
   const p = evToSrc(ev);
   const moved = Math.hypot(p.px - dragging.px, p.py - dragging.py);
   if(moved < 5){ // クリック = その位置を中心に2倍
-    sel = fitRegion({ x: p.x - srcW / 4, y: p.y - srcH / 4, w: srcW / 2, h: srcH / 2 });
+    const R = fullRegion(); sel = fitRegion({ x: p.x - R.w / 4, y: p.y - R.h / 4, w: R.w / 2, h: R.h / 2 });
   }
   dragging = null; draw();
   if($('autoZoom').checked && sel) zoomTo(sel);
@@ -343,11 +375,12 @@ function tfFor(r){
   const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
   const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
   const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
-  const s = Math.min(canvasW / vw, canvasH / vh);
+  const B = base ? base.box : { x: 0, y: 0, w: canvasW, h: canvasH };
+  const s = Math.min(B.w / vw, B.h / vh);
   return {
     cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb,
     scaleX: s, scaleY: s,
-    positionX: (canvasW - vw * s) / 2, positionY: (canvasH - vh * s) / 2,
+    positionX: B.x + (B.w - vw * s) / 2, positionY: B.y + (B.h - vh * s) / 2,
     alignment: 5, rotation: 0, boundsType: 'OBS_BOUNDS_NONE'
   };
 }
