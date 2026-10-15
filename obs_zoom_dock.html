@@ -101,7 +101,7 @@ button.icon{padding:4px 8px}
   </div>
   <div class="row" style="margin:0;gap:14px">
     <label style="margin:0;display:flex;gap:5px;align-items:center;color:var(--txt);font-size:12px"><input type="checkbox" id="autoZoom">選択したら即拡大</label>
-    <label style="margin:0;display:flex;gap:5px;align-items:center;color:var(--txt);font-size:12px"><input type="checkbox" id="autoRefresh">プレビュー自動更新</label>
+    <label style="margin:0;display:flex;gap:5px;align-items:center;color:var(--txt);font-size:12px"><input type="checkbox" id="autoRefresh">ライブプレビュー</label>
   </div>
 </div>
 <div class="hint">キー: Enter=拡大 / Esc=元に戻す / 1〜9=プリセット（ドックをクリックして操作）</div>
@@ -294,9 +294,7 @@ async function refreshPreview(){
     await updateSrcSize();
     if(!srcW || !srcH){ showPreviewEmpty('ソースのサイズが0です（非表示・未読み込みの可能性）'); return; }
     const r = await req('GetSourceScreenshot', { sourceName: item.sourceName, imageFormat: 'jpg', imageWidth: 800, imageCompressionQuality: 70 });
-    const img = $('pvImg');
-    img.onload = () => { img.classList.remove('hide'); $('pvCv').classList.remove('hide'); $('pvEmpty').classList.add('hide'); draw(); };
-    img.src = r.imageData;
+    await showFrame(r.imageData); draw();
     showErr('');
   }catch(e){ showErr('プレビュー取得失敗: ' + e.message); }
 }
@@ -503,7 +501,33 @@ $('autoZoom').checked = LS.get('zoomdock.autoZoom', false);
 $('autoZoom').onchange = () => LS.set('zoomdock.autoZoom', $('autoZoom').checked);
 $('autoRefresh').checked = LS.get('zoomdock.autoRefresh', true);
 $('autoRefresh').onchange = () => LS.set('zoomdock.autoRefresh', $('autoRefresh').checked);
-setInterval(() => { if($('autoRefresh').checked && !dragging && connected && document.visibilityState === 'visible') refreshPreview(); }, 3000);
+/* ライブプレビュー: 前のフレームの表示完了を待ってから次を取得（約15fps、要求を溜めない） */
+let lastSizeCheck = 0;
+function showFrame(src){
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      const img = $('pvImg'), first = img.classList.contains('hide');
+      img.src = src;
+      if(first){ img.classList.remove('hide'); $('pvCv').classList.remove('hide'); $('pvEmpty').classList.add('hide'); requestAnimationFrame(draw); }
+      res();
+    };
+    im.onerror = res;
+    im.src = src;
+  });
+}
+async function pvLoop(){
+  const t0 = performance.now();
+  if($('autoRefresh').checked && connected && item && srcW && document.visibilityState === 'visible'){
+    try{
+      if(t0 - lastSizeCheck > 2000){ lastSizeCheck = t0; await updateSrcSize(); }
+      const r = await req('GetSourceScreenshot', { sourceName: item.sourceName, imageFormat: 'jpg', imageWidth: 640, imageCompressionQuality: 60 });
+      await showFrame(r.imageData);
+    }catch(e){}
+  }
+  setTimeout(pvLoop, Math.max(0, 66 - (performance.now() - t0)));
+}
+pvLoop();
 
 window.addEventListener('resize', draw);
 window.addEventListener('keydown', ev => {
