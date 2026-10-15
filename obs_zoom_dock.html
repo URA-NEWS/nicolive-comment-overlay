@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZOOM DOCK</title>
+<style>
+:root{--bg:#15161a;--panel:#1e2026;--line:#2e313a;--txt:#e8e9ec;--sub:#8b8f99;--acc:#3ea6ff;--red:#ff5a5a;--grn:#4cd97b;--ylw:#ffc23e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,"Yu Gothic UI","Meiryo",sans-serif;padding:8px;user-select:none}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.row>*{min-width:0}
+.grow{flex:1}
+.hide{display:none!important}
+.status{display:flex;align-items:center;gap:6px;font-weight:700}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--sub)}
+.dot.ok{background:var(--grn)}.dot.ng{background:var(--red)}.dot.wait{background:var(--ylw)}
+.badge{margin-left:auto;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--red);color:#fff;font-weight:700}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px}
+label{font-size:11px;color:var(--sub);display:block;margin-bottom:2px}
+input,select{width:100%;background:#0f1013;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
+input[type=checkbox]{width:auto}
+input[type=range]{padding:0}
+button{background:#2a2d35;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer;white-space:nowrap}
+button:hover{background:#343843}
+button.icon{padding:4px 8px}
+.big{flex:1;padding:12px 0;font-size:15px;font-weight:800;border:none}
+#btnZoom{background:var(--acc);color:#001726}
+#btnZoom:hover{background:#62b8ff}
+#btnReset{background:var(--red);color:#fff}
+#btnReset:hover{background:#ff7a7a}
+#pvWrap{position:relative;background:#000;border-radius:6px;overflow:hidden;min-height:60px}
+#pvImg{display:block;width:100%;height:auto}
+#pvCv{position:absolute;left:0;top:0;width:100%;height:100%;cursor:crosshair}
+#pvEmpty{color:var(--sub);text-align:center;padding:22px 8px;font-size:12px}
+.presets{display:flex;flex-wrap:wrap;gap:5px}
+.chip{display:flex;align-items:center;background:#2a2d35;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.chip b{padding:4px 4px 4px 10px;cursor:pointer;font-weight:600}
+.chip b small{color:var(--sub);font-weight:400;margin-right:4px}
+.chip i{font-style:normal;padding:4px 8px;color:var(--sub);cursor:pointer}
+.chip:hover{border-color:var(--acc)}
+.chip i:hover{color:var(--red)}
+.hint{font-size:11px;color:var(--sub)}
+.err{color:var(--red);font-size:11px;min-height:14px}
+</style>
+</head>
+<body>
+
+<div class="row">
+  <div class="status"><span class="dot" id="dot"></span><span id="stTxt">未接続</span></div>
+  <span class="badge hide" id="zoomBadge">拡大中</span>
+  <button class="icon" id="btnConnToggle" title="接続設定" style="margin-left:auto">⚙</button>
+</div>
+
+<div class="panel" id="conn">
+  <div class="row">
+    <div class="grow"><label>ホスト</label><input id="host" value="127.0.0.1"></div>
+    <div style="width:70px"><label>ポート</label><input id="port" value="4455"></div>
+  </div>
+  <div class="row">
+    <div class="grow"><label>パスワード（OBS → ツール → WebSocketサーバー設定）</label><input id="pass" type="password"></div>
+  </div>
+  <button id="btnConnect" style="width:100%">接続</button>
+</div>
+
+<div class="row">
+  <div class="grow"><label>シーン</label><select id="selScene"></select></div>
+  <div class="grow"><label>キャプチャソース</label><select id="selItem"></select></div>
+</div>
+
+<div class="row" style="margin-bottom:4px">
+  <span class="hint grow">ドラッグで範囲選択 ／ クリックで2倍</span>
+  <button class="icon" id="btnRefresh" title="プレビュー更新">⟳</button>
+</div>
+<div id="pvWrap">
+  <img id="pvImg" class="hide" alt="">
+  <canvas id="pvCv" class="hide"></canvas>
+  <div id="pvEmpty">OBSに接続するとプレビューが表示されます</div>
+</div>
+<div class="err" id="err"></div>
+
+<div class="row">
+  <button class="big" id="btnZoom">拡大</button>
+  <button class="big" id="btnReset">元に戻す</button>
+</div>
+
+<div class="panel">
+  <label>プリセット（キー 1〜9 で呼び出し）</label>
+  <div class="row">
+    <input id="presetName" class="grow" placeholder="名前（例: コメント欄）">
+    <button id="btnSavePreset">保存</button>
+  </div>
+  <div class="presets" id="presets"></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <label style="margin:0;white-space:nowrap">速度</label>
+    <input type="range" id="speed" min="0" max="1200" step="50" class="grow">
+    <span id="speedTxt" class="hint" style="width:48px;text-align:right"></span>
+  </div>
+  <div class="row" style="margin:0;gap:14px">
+    <label style="margin:0;display:flex;gap:5px;align-items:center;color:var(--txt);font-size:12px"><input type="checkbox" id="autoZoom">選択したら即拡大</label>
+    <label style="margin:0;display:flex;gap:5px;align-items:center;color:var(--txt);font-size:12px"><input type="checkbox" id="autoRefresh">プレビュー自動更新</label>
+  </div>
+</div>
+<div class="hint">キー: Enter=拡大 / Esc=元に戻す / 1〜9=プリセット（ドックをクリックして操作）</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+
+/* ---------- SHA-256（obs-websocket認証用、crypto.subtleが無い環境向けの自前実装） ---------- */
+function sha256(msg){
+  const P = []; for(let n = 2; P.length < 64; n++){ if(P.every(p => n % p)) P.push(n); }
+  const K = P.map(p => (Math.cbrt(p) % 1) * 2 ** 32 >>> 0);
+  let H = P.slice(0, 8).map(p => (Math.sqrt(p) % 1) * 2 ** 32 >>> 0);
+  const l = msg.length, bl = ((l + 9 + 63) >> 6) << 6;
+  const m = new Uint8Array(bl); m.set(msg); m[l] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(bl - 4, (l * 8) >>> 0); dv.setUint32(bl - 8, Math.floor(l / 0x20000000));
+  const W = new Uint32Array(64);
+  for(let i = 0; i < bl; i += 64){
+    for(let t = 0; t < 16; t++) W[t] = dv.getUint32(i + t * 4);
+    for(let t = 16; t < 64; t++){
+      const a = W[t - 15], b = W[t - 2];
+      const s0 = (a >>> 7 | a << 25) ^ (a >>> 18 | a << 14) ^ (a >>> 3);
+      const s1 = (b >>> 17 | b << 15) ^ (b >>> 19 | b << 13) ^ (b >>> 10);
+      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for(let t = 0; t < 64; t++){
+      const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0;
+      const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H = [a, b, c, d, e, f, g, h].map((v, j) => (H[j] + v) >>> 0);
+  }
+  const out = new Uint8Array(32), o = new DataView(out.buffer);
+  H.forEach((v, j) => o.setUint32(j * 4, v));
+  return out;
+}
+const b64 = bytes => btoa(String.fromCharCode(...bytes));
+const utf8 = s => new TextEncoder().encode(s);
+function makeAuth(pass, salt, challenge){
+  const secret = b64(sha256(utf8(pass + salt)));
+  return b64(sha256(utf8(secret + challenge)));
+}
+
+/* ---------- 状態 ---------- */
+let ws = null, reqSeq = 0, connected = false, reconnectTimer = null;
+const pending = new Map();
+let canvasW = 1920, canvasH = 1080;
+let scene = '', item = null;       // item: {sceneItemId, sourceName}
+let srcW = 0, srcH = 0;
+let liveRegion = null;             // 現在OBSに適用中の表示範囲（null=元の状態）
+let sel = null;                    // プレビュー上の選択範囲（ソースpx）
+let animToken = 0;
+let dragging = null;
+
+function setStatus(t, cls){ $('stTxt').textContent = t; $('dot').className = 'dot ' + (cls || ''); }
+function showErr(t){ $('err').textContent = t || ''; }
+
+/* ---------- obs-websocket v5 ---------- */
+function connect(){
+  clearTimeout(reconnectTimer);
+  const cfg = { host: $('host').value.trim() || '127.0.0.1', port: $('port').value.trim() || '4455', pass: $('pass').value };
+  LS.set('zoomdock.conn', cfg);
+  if(ws){ ws.onclose = null; try{ ws.close(); }catch(e){} }
+  setStatus('接続中…', 'wait');
+  try{ ws = new WebSocket(`ws://${cfg.host}:${cfg.port}`); }
+  catch(e){ setStatus('接続先が不正です', 'ng'); return; }
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if(m.op === 0){
+      const d = { rpcVersion: 1, eventSubscriptions: 0 };
+      if(m.d.authentication) d.authentication = makeAuth(cfg.pass, m.d.authentication.salt, m.d.authentication.challenge);
+      ws.send(JSON.stringify({ op: 1, d }));
+    }else if(m.op === 2){
+      connected = true; setStatus('接続済み', 'ok'); $('conn').classList.add('hide'); onConnected();
+    }else if(m.op === 7){
+      const p = pending.get(m.d.requestId); if(!p) return;
+      pending.delete(m.d.requestId);
+      const st = m.d.requestStatus;
+      st.result ? p.res(m.d.responseData || {}) : p.rej(new Error(st.comment || ('エラーコード ' + st.code)));
+    }
+  };
+  ws.onclose = ev => {
+    connected = false;
+    pending.forEach(p => p.rej(new Error('切断されました'))); pending.clear();
+    if(ev.code === 4009){ setStatus('パスワードが違います', 'ng'); $('conn').classList.remove('hide'); return; }
+    setStatus('未接続（再接続待ち）', 'ng');
+    reconnectTimer = setTimeout(connect, 3000);
+  };
+}
+function req(type, data){
+  return new Promise((res, rej) => {
+    if(!ws || ws.readyState !== 1) return rej(new Error('OBSに未接続です'));
+    const id = 'r' + (++reqSeq);
+    pending.set(id, { res, rej });
+    ws.send(JSON.stringify({ op: 6, d: { requestType: type, requestId: id, requestData: data || {} } }));
+  });
+}
+
+async function onConnected(){
+  try{
+    const v = await req('GetVideoSettings');
+    canvasW = v.baseWidth; canvasH = v.baseHeight;
+    await loadScenes();
+  }catch(e){ showErr(e.message); }
+}
+
+async function loadScenes(){
+  const r = await req('GetSceneList');
+  const names = r.scenes.map(s => s.sceneName).reverse();
+  const saved = LS.get('zoomdock.scene', '');
+  const pick = names.includes(saved) ? saved : r.currentProgramSceneName;
+  $('selScene').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
+  $('selScene').value = pick;
+  scene = pick;
+  await loadItems();
+}
+
+const CAPTURE_KINDS = ['browser_source', 'window_capture', 'monitor_capture', 'game_capture', 'display_capture', 'xcomposite_input', 'screen_capture', 'pipewire-screen-capture-source', 'pipewire-window-capture-source', 'macos-screen-capture'];
+async function loadItems(){
+  const r = await req('GetSceneItemList', { sceneName: scene });
+  const items = r.sceneItems.slice().reverse();
+  $('selItem').innerHTML = items.map(i => `<option value="${i.sceneItemId}">${esc(i.sourceName)}</option>`).join('');
+  const saved = LS.get('zoomdock.item:' + scene, '');
+  let pick = items.find(i => i.sourceName === saved) || items.find(i => CAPTURE_KINDS.includes(i.inputKind)) || items[0];
+  if(!pick){ item = null; showPreviewEmpty('このシーンにソースがありません'); return; }
+  $('selItem').value = pick.sceneItemId;
+  await selectItem(pick);
+}
+
+async function selectItem(it){
+  item = { sceneItemId: it.sceneItemId, sourceName: it.sourceName };
+  LS.set('zoomdock.item:' + scene, it.sourceName);
+  sel = null;
+  const st = LS.get(origKey(), null);
+  liveRegion = st && st.region ? st.region : null;
+  updateBadge(); renderPresets();
+  await refreshPreview();
+}
+
+/* ---------- プレビュー ---------- */
+async function updateSrcSize(){
+  const t = (await req('GetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
+  srcW = t.sourceWidth; srcH = t.sourceHeight;
+  return t;
+}
+async function refreshPreview(){
+  if(!item || !connected) return;
+  try{
+    await updateSrcSize();
+    if(!srcW || !srcH){ showPreviewEmpty('ソースのサイズが0です（非表示・未読み込みの可能性）'); return; }
+    const r = await req('GetSourceScreenshot', { sourceName: item.sourceName, imageFormat: 'jpg', imageWidth: 800, imageCompressionQuality: 70 });
+    const img = $('pvImg');
+    img.onload = () => { img.classList.remove('hide'); $('pvCv').classList.remove('hide'); $('pvEmpty').classList.add('hide'); draw(); };
+    img.src = r.imageData;
+    showErr('');
+  }catch(e){ showErr('プレビュー取得失敗: ' + e.message); }
+}
+function showPreviewEmpty(t){
+  $('pvImg').classList.add('hide'); $('pvCv').classList.add('hide');
+  $('pvEmpty').classList.remove('hide'); $('pvEmpty').textContent = t;
+}
+
+function draw(){
+  const cv = $('pvCv'), rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(rect.width * dpr); cv.height = Math.round(rect.height * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if(!srcW) return;
+  const k = rect.width / srcW;
+  const toPx = r => [r.x * k, r.y * k, r.w * k, r.h * k];
+  if(liveRegion){
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 2;
+    ctx.strokeRect(...toPx(liveRegion)); ctx.setLineDash([]);
+  }
+  if(sel){
+    const [x, y, w, h] = toPx(sel);
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(0, 0, rect.width, y); ctx.fillRect(0, y + h, rect.width, rect.height - y - h);
+    ctx.fillRect(0, y, x, h); ctx.fillRect(x + w, y, rect.width - x - w, h);
+    ctx.strokeStyle = '#3ea6ff'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#3ea6ff'; ctx.font = 'bold 12px system-ui';
+    ctx.fillText('×' + (srcW / sel.w).toFixed(1), x + 4, y + 14);
+  }
+}
+
+/* 範囲を配信画面の縦横比に合わせ、ソース内に収める */
+function fitRegion(r){
+  const A = canvasW / canvasH;
+  let { w, h } = r; const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  if(w / h > A) h = w / A; else w = h * A;
+  const minW = Math.max(40, srcW / 20);
+  if(w < minW){ w = minW; h = w / A; }
+  if(w > srcW){ w = srcW; h = w / A; }
+  if(h > srcH){ h = srcH; w = h * A; }
+  const x = Math.min(Math.max(0, cx - w / 2), srcW - w);
+  const y = Math.min(Math.max(0, cy - h / 2), srcH - h);
+  return { x, y, w, h };
+}
+const fullRegion = () => ({ x: 0, y: 0, w: srcW, h: srcH });
+
+function evToSrc(ev){
+  const rect = $('pvCv').getBoundingClientRect();
+  return { x: (ev.clientX - rect.left) / rect.width * srcW, y: (ev.clientY - rect.top) / rect.height * srcH, px: ev.clientX, py: ev.clientY };
+}
+$('pvCv').addEventListener('mousedown', ev => { if(!srcW) return; dragging = evToSrc(ev); });
+window.addEventListener('mousemove', ev => {
+  if(!dragging) return;
+  const p = evToSrc(ev);
+  const x = Math.min(dragging.x, p.x), y = Math.min(dragging.y, p.y);
+  sel = fitRegion({ x, y, w: Math.max(1, Math.abs(p.x - dragging.x)), h: Math.max(1, Math.abs(p.y - dragging.y)) });
+  draw();
+});
+window.addEventListener('mouseup', ev => {
+  if(!dragging) return;
+  const p = evToSrc(ev);
+  const moved = Math.hypot(p.px - dragging.px, p.py - dragging.py);
+  if(moved < 5){ // クリック = その位置を中心に2倍
+    sel = fitRegion({ x: p.x - srcW / 4, y: p.y - srcH / 4, w: srcW / 2, h: srcH / 2 });
+  }
+  dragging = null; draw();
+  if($('autoZoom').checked && sel) zoomTo(sel);
+});
+
+/* ---------- 拡大・復帰 ---------- */
+const origKey = () => `zoomdock.orig:${scene}:${item ? item.sceneItemId : ''}`;
+
+function tfFor(r){
+  const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
+  const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
+  const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
+  const s = Math.min(canvasW / vw, canvasH / vh);
+  return {
+    cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb,
+    scaleX: s, scaleY: s,
+    positionX: (canvasW - vw * s) / 2, positionY: (canvasH - vh * s) / 2,
+    alignment: 5, rotation: 0, boundsType: 'OBS_BOUNDS_NONE'
+  };
+}
+function sendTf(tf){
+  return req('SetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId, sceneItemTransform: tf });
+}
+function lerpRegion(a, b, e){
+  const w = a.w * Math.pow(b.w / a.w, e), h = a.h * Math.pow(b.h / a.h, e);
+  const cx = (a.x + a.w / 2) + ((b.x + b.w / 2) - (a.x + a.w / 2)) * e;
+  const cy = (a.y + a.h / 2) + ((b.y + b.h / 2) - (a.y + a.h / 2)) * e;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+let animRegion = null;
+function animate(from, to, dur){
+  const tok = ++animToken;
+  return new Promise(res => {
+    const t0 = performance.now();
+    const step = () => {
+      if(tok !== animToken) return res(false);
+      const t = dur > 0 ? Math.min(1, (performance.now() - t0) / dur) : 1;
+      const e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      animRegion = lerpRegion(from, to, e);
+      sendTf(tfFor(animRegion)).catch(() => {});
+      if(t < 1) setTimeout(step, 16); else res(true);
+    };
+    step();
+  });
+}
+
+async function zoomTo(r){
+  if(!item || !connected){ showErr('OBSに未接続です'); return; }
+  try{
+    await updateSrcSize();
+    if(!srcW){ showErr('ソースのサイズが取得できません'); return; }
+    r = fitRegion(r);
+    let st = LS.get(origKey(), null);
+    if(!st){
+      const t = (await req('GetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
+      st = { tf: t, region: null };
+    }
+    const from = animRegion || liveRegion || fullRegion();
+    const done = await animate(from, r, +$('speed').value);
+    if(!done) return;
+    liveRegion = r; st.region = r; LS.set(origKey(), st);
+    updateBadge(); draw(); showErr('');
+  }catch(e){ showErr('拡大失敗: ' + e.message); }
+}
+
+const TF_KEYS = ['positionX', 'positionY', 'rotation', 'scaleX', 'scaleY', 'alignment', 'boundsType', 'boundsAlignment', 'boundsWidth', 'boundsHeight', 'cropLeft', 'cropRight', 'cropTop', 'cropBottom', 'cropToBounds'];
+function cleanTf(t){
+  const o = {};
+  TF_KEYS.forEach(k => { if(t[k] !== undefined) o[k] = t[k]; });
+  if(!(o.boundsWidth >= 1)) delete o.boundsWidth;
+  if(!(o.boundsHeight >= 1)) delete o.boundsHeight;
+  return o;
+}
+async function resetZoom(){
+  if(!item || !connected){ showErr('OBSに未接続です'); return; }
+  const st = LS.get(origKey(), null);
+  if(!st){ animToken++; return; }
+  try{
+    await updateSrcSize();
+    const from = animRegion || liveRegion;
+    if(from && srcW){ const done = await animate(from, fullRegion(), +$('speed').value); if(!done) return; }
+    await sendTf(cleanTf(st.tf));
+    LS.del(origKey());
+    liveRegion = null; animRegion = null;
+    updateBadge(); draw(); showErr('');
+  }catch(e){ showErr('復帰失敗: ' + e.message); }
+}
+function updateBadge(){ $('zoomBadge').classList.toggle('hide', !liveRegion); }
+
+/* ---------- プリセット ---------- */
+const presetKey = () => 'zoomdock.presets:' + (item ? item.sourceName : '');
+function renderPresets(){
+  const list = LS.get(presetKey(), []);
+  $('presets').innerHTML = list.length ? list.map((p, i) =>
+    `<span class="chip"><b data-i="${i}">${i < 9 ? `<small>${i + 1}</small>` : ''}${esc(p.name)}</b><i data-del="${i}" title="削除">×</i></span>`
+  ).join('') : '<span class="hint">範囲を選んで保存すると、ワンクリックで拡大できます</span>';
+}
+function usePreset(i){
+  const p = LS.get(presetKey(), [])[i]; if(!p || !srcW) return;
+  sel = { x: p.r.x * srcW, y: p.r.y * srcH, w: p.r.w * srcW, h: p.r.h * srcH };
+  draw(); zoomTo(sel);
+}
+$('presets').addEventListener('click', ev => {
+  const d = ev.target.closest('[data-del]'), u = ev.target.closest('[data-i]');
+  if(d){ const list = LS.get(presetKey(), []); list.splice(+d.dataset.del, 1); LS.set(presetKey(), list); renderPresets(); }
+  else if(u) usePreset(+u.dataset.i);
+});
+$('btnSavePreset').onclick = () => {
+  const r = sel || liveRegion;
+  if(!r || !srcW){ showErr('先にプレビューで範囲を選択してください'); return; }
+  const list = LS.get(presetKey(), []);
+  list.push({ name: $('presetName').value.trim() || ('範囲' + (list.length + 1)), r: { x: r.x / srcW, y: r.y / srcH, w: r.w / srcW, h: r.h / srcH } });
+  LS.set(presetKey(), list); $('presetName').value = ''; renderPresets(); showErr('');
+};
+
+/* ---------- UI配線 ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+$('btnConnect').onclick = connect;
+$('btnConnToggle').onclick = () => $('conn').classList.toggle('hide');
+$('btnRefresh').onclick = refreshPreview;
+$('btnZoom').onclick = () => { if(sel) zoomTo(sel); else showErr('プレビューで範囲を選択してください'); };
+$('btnReset').onclick = resetZoom;
+$('selScene').onchange = async () => { scene = $('selScene').value; LS.set('zoomdock.scene', scene); try{ await loadItems(); }catch(e){ showErr(e.message); } };
+$('selItem').onchange = async () => {
+  const id = +$('selItem').value;
+  await selectItem({ sceneItemId: id, sourceName: $('selItem').selectedOptions[0].textContent });
+};
+
+const sp = $('speed');
+sp.value = LS.get('zoomdock.speed', 400);
+const spTxt = () => $('speedTxt').textContent = sp.value == 0 ? '即時' : (sp.value / 1000).toFixed(2) + '秒';
+spTxt();
+sp.oninput = () => { spTxt(); LS.set('zoomdock.speed', +sp.value); };
+$('autoZoom').checked = LS.get('zoomdock.autoZoom', false);
+$('autoZoom').onchange = () => LS.set('zoomdock.autoZoom', $('autoZoom').checked);
+$('autoRefresh').checked = LS.get('zoomdock.autoRefresh', true);
+$('autoRefresh').onchange = () => LS.set('zoomdock.autoRefresh', $('autoRefresh').checked);
+setInterval(() => { if($('autoRefresh').checked && !dragging && connected && document.visibilityState === 'visible') refreshPreview(); }, 3000);
+
+window.addEventListener('resize', draw);
+window.addEventListener('keydown', ev => {
+  if(ev.target.tagName === 'INPUT' && ev.target.type !== 'range' && ev.target.type !== 'checkbox') return;
+  if(ev.key === 'Escape'){ ev.preventDefault(); resetZoom(); }
+  else if(ev.key === 'Enter'){ ev.preventDefault(); $('btnZoom').click(); }
+  else if(/^[1-9]$/.test(ev.key)) usePreset(+ev.key - 1);
+});
+
+const c = LS.get('zoomdock.conn', null);
+if(c){ $('host').value = c.host; $('port').value = c.port; $('pass').value = c.pass; connect(); }
+</script>
+</body>
+</html>

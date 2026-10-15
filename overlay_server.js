@@ -1533,6 +1533,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- ズームドック(OBS WebSocket経由でキャプチャソースを部分拡大) ----
+  if (url.pathname === '/zoom-dock' && req.method === 'GET') {
+    const html = fs.readFileSync(path.join(ROOT, 'obs_zoom_dock.html'), 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(html);
+    return;
+  }
+
   // ---- 縦型オーバーレイ ----
   if (url.pathname === '/overlay-vertical' && req.method === 'GET') {
     const html = fs.readFileSync(path.join(ROOT, 'overlay_vertical.html'), 'utf8');
