@@ -325,6 +325,7 @@ async function selectItem(it){
   sel = null;
   const st = LS.get(origKey(), null);
   liveRegion = st && st.region ? st.region : null;
+  animRegion = animPos[origKey()] || null;
   updateBadge(); renderPresets();
   await refreshPreview();
 }
@@ -472,7 +473,10 @@ window.addEventListener('mouseup', ev => {
 /* ---------- 拡大・復帰 ---------- */
 const origKey = () => `zoomdock.orig:${item ? item.scene : scene}:${item ? item.sceneItemId : ''}`;
 
-function tfFor(r){
+/* 書き込み対象は操作開始時点のソースに固定する（途中でソースを切り替えても別ソースに書き込まない） */
+function makeCtx(){ return { scene: item.scene, id: item.sceneItemId, key: origKey(), srcW, srcH, base }; }
+function tfFor(r, c){
+  const srcW = c.srcW, srcH = c.srcH, base = c.base;
   const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
   const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
   const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
@@ -486,8 +490,8 @@ function tfFor(r){
     positionX: B.x, positionY: B.y, alignment: 5
   };
 }
-function sendTf(tf){
-  return req('SetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId, sceneItemTransform: tf });
+function sendTf(tf, c){
+  return req('SetSceneItemTransform', { sceneName: c.scene, sceneItemId: c.id, sceneItemTransform: tf });
 }
 function lerpRegion(a, b, e){
   const w = a.w * Math.pow(b.w / a.w, e), h = a.h * Math.pow(b.h / a.h, e);
@@ -495,17 +499,20 @@ function lerpRegion(a, b, e){
   const cy = (a.y + a.h / 2) + ((b.y + b.h / 2) - (a.y + a.h / 2)) * e;
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
-let animRegion = null;
-function animate(from, to, dur){
-  const tok = ++animToken;
+let animRegion = null;                 // 表示中ソースのアニメ途中位置
+const animTok = {}, animPos = {};      // ソースごとのアニメ管理
+function animate(from, to, dur, c){
+  const tok = animTok[c.key] = (animTok[c.key] || 0) + 1;
   return new Promise(res => {
     const t0 = performance.now();
     const step = () => {
-      if(tok !== animToken) return res(false);
+      if(tok !== animTok[c.key]) return res(false);
       const t = dur > 0 ? Math.min(1, (performance.now() - t0) / dur) : 1;
       const e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      animRegion = lerpRegion(from, to, e);
-      sendTf(tfFor(animRegion)).catch(() => {});
+      const r = lerpRegion(from, to, e);
+      animPos[c.key] = r;
+      if(item && origKey() === c.key) animRegion = r;
+      sendTf(tfFor(r, c), c).catch(() => {});
       if(t < 1) setTimeout(step, 16); else res(true);
     };
     step();
@@ -520,16 +527,19 @@ async function zoomTo(r){
     if(!srcW){ showErr('ソースのサイズが取得できません'); return; }
     busyCount++; counted = true;
     r = fitRegion(r);
-    let st = LS.get(origKey(), null);
+    const c = makeCtx();
+    let st = LS.get(c.key, null);
     if(!st){
-      const t = (await req('GetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
-      st = { tf: t, region: null };
+      // 拡大を始める前に「元の配置」を保存（途中で止まっても必ず戻せるように）
+      st = { v: 2, tf: curTf, region: null, applied: null };
+      LS.set(c.key, st);
     }
-    const from = animRegion || liveRegion || fullRegion();
-    const done = await animate(from, r, +$('speed').value);
+    const from = animPos[c.key] || st.region || fullRegion();
+    const done = await animate(from, r, +$('speed').value, c);
     if(!done) return;
-    liveRegion = r; st.region = r; st.applied = tfFor(r); LS.set(origKey(), st);
-    updateBadge(); draw(); showErr('');
+    st.region = r; st.applied = tfFor(r, c); LS.set(c.key, st);
+    if(item && origKey() === c.key){ liveRegion = r; updateBadge(); draw(); }
+    showErr('');
   }catch(e){ showErr('拡大失敗: ' + e.message); }
   finally{ if(counted) busyCount--; }
 }
@@ -544,20 +554,21 @@ function cleanTf(t){
 }
 async function resetZoom(){
   if(!item || !connected){ showErr('OBSに未接続です'); return; }
-  if(!LS.get(origKey(), null)){ animToken++; showErr('このドックで拡大した状態ではないため、何も変更していません'); return; }
+  if(!LS.get(origKey(), null)){ showErr('このドックで拡大した状態ではないため、何も変更していません'); return; }
   let counted = false;
   try{
     await updateSrcSize();
     const st = LS.get(origKey(), null);
-    if(!st){ animToken++; showErr('OBS側で切り抜きが変更されているため、今の配置をそのまま維持しました'); return; }
+    if(!st){ showErr('OBS側で切り抜きが変更されているため、今の配置をそのまま維持しました'); return; }
     busyCount++; counted = true;
+    const c = makeCtx();
     const fields = restoreFields(curTf, st);
-    const from = animRegion || liveRegion;
-    if(from && srcW){ const done = await animate(from, fullRegion(), +$('speed').value); if(!done) return; }
-    await sendTf(fields);
-    LS.del(origKey());
-    liveRegion = null; animRegion = null;
-    updateBadge(); draw(); showErr('');
+    const from = animPos[c.key] || st.region;
+    if(from && c.srcW){ const done = await animate(from, fullRegion(), +$('speed').value, c); if(!done) return; }
+    await sendTf(fields, c);
+    LS.del(c.key); delete animPos[c.key];
+    if(item && origKey() === c.key){ liveRegion = null; animRegion = null; updateBadge(); draw(); }
+    showErr('');
   }catch(e){ showErr('復帰失敗: ' + e.message); }
   finally{ if(counted) busyCount--; }
 }
@@ -664,6 +675,8 @@ window.addEventListener('keydown', ev => {
   else if(/^[1-9]$/.test(ev.key)) usePreset(+ev.key - 1);
 });
 
+// 旧バージョンが残した「元の配置」の記録は信頼できないため破棄（勝手な書き戻しを防ぐ）
+try{ Object.keys(localStorage).forEach(k => { if(k.startsWith('zoomdock.orig:')){ const v = LS.get(k, null); if(!v || v.v !== 2) LS.del(k); } }); }catch(e){}
 const c = LS.get('zoomdock.conn', null);
 if(c){ $('host').value = c.host; $('port').value = c.port; $('pass').value = c.pass; connect(); }
 </script>
