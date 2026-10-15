@@ -336,6 +336,7 @@ async function updateSrcSize(){
   srcW = t.sourceWidth; srcH = t.sourceHeight;
   let st = item ? LS.get(origKey(), null) : null;
   curTf = t;
+  if(!st && !busyCount && item && !LS.get(homeKey(origKey()), null)) LS.set(homeKey(origKey()), { v: 2, tf: t });
   base = computeBase(st ? { ...t, ...restoreFields(t, st) } : t);
   return t;
 }
@@ -467,6 +468,7 @@ window.addEventListener('mouseup', ev => {
 });
 
 /* ---------- 拡大・復帰 ---------- */
+const homeKey = k => k.replace('zoomdock.orig:', 'zoomdock.home:');
 const origKey = () => `zoomdock.orig:${item ? item.scene : scene}:${item ? item.sceneItemId : ''}`;
 
 /* 書き込み対象は操作開始時点のソースに固定する（途中でソースを切り替えても別ソースに書き込まない） */
@@ -528,7 +530,7 @@ async function zoomTo(r){
     if(!st){
       // 拡大を始める前に「元の配置」を保存（途中で止まっても必ず戻せるように）
       st = { v: 2, tf: curTf, region: null, applied: null };
-      LS.set(c.key, st);
+      LS.set(c.key, st); LS.set(homeKey(c.key), { v: 2, tf: curTf });
     }
     const from = animPos[c.key] || st.region || fullRegion();
     const done = await animate(from, r, +$('speed').value, c);
@@ -557,14 +559,13 @@ async function resetZoom(){
     busyCount++; counted = true;
     const c = makeCtx();
     if(!st){
-      // 拡大の記録が無い場合でも、切り抜きを全解除して拡大を完全にリセットする（枠・比率・位置は維持）
-      const t = curTf, f = { cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 };
-      if(CROP_KEYS.every(k => !(t[k] > 0))){ showErr('拡大されていません'); return; }
-      if(!isBounded(t)){
-        const vw = Math.max(1, t.sourceWidth - (t.cropLeft || 0) - (t.cropRight || 0));
-        const k = vw / Math.max(1, t.sourceWidth);   // 表示幅を保ち、元の縦横の伸縮比はそのまま
-        f.scaleX = t.scaleX * k; f.scaleY = t.scaleY * k;
-      }
+      // 拡大の記録が無い場合: 拡大前に記録しておいた通常時の配置(home)に、拡大で変わる項目だけ完全に戻す
+      const h = LS.get(homeKey(c.key), null), t = curTf;
+      if(!h || !h.tf){ showErr('拡大されていません'); return; }
+      // 位置・表示サイズ(=比率)は今のまま保ち、切り抜きだけを通常時に戻す
+      const f = restoreFields(t, { tf: h.tf, applied: { positionX: NaN } });
+      const same = Object.keys(f).every(k => near(t[k], f[k], k.startsWith('scale') ? 1e-6 : 0.01));
+      if(same){ showErr('拡大されていません'); return; }
       await sendTf(f, c);
       delete animPos[c.key]; liveRegion = null; animRegion = null; updateBadge(); draw(); showErr('');
       return;
