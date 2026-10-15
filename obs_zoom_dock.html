@@ -238,20 +238,39 @@ async function loadScenes(){
 }
 
 const CAPTURE_KINDS = ['browser_source', 'window_capture', 'monitor_capture', 'game_capture', 'display_capture', 'xcomposite_input', 'screen_capture', 'pipewire-screen-capture-source', 'pipewire-window-capture-source', 'macos-screen-capture'];
-async function loadItems(){
-  const r = await req('GetSceneItemList', { sceneName: scene });
-  const items = r.sceneItems.slice().reverse();
-  $('selItem').innerHTML = items.map(i => `<option value="${i.sceneItemId}">${esc(i.sourceName)}</option>`).join('');
+/* シーン内のソースを、グループ・入れ子シーンの中身まで含めて列挙する */
+async function listItems(){
+  const out = [], seen = new Set();
+  async function walk(sceneName, isGroup, depth, prefix){
+    if(depth > 3) return;
+    const key = (isGroup ? 'g:' : 's:') + sceneName;
+    if(seen.has(key)) return; seen.add(key);
+    const r = isGroup ? await req('GetGroupSceneItemList', { sceneName }) : await req('GetSceneItemList', { sceneName });
+    for(const i of r.sceneItems.slice().reverse()){
+      out.push({ sceneItemId: i.sceneItemId, sourceName: i.sourceName, inputKind: i.inputKind, scene: sceneName, label: prefix + i.sourceName });
+      if(i.isGroup) await walk(i.sourceName, true, depth + 1, prefix + i.sourceName + ' › ');
+      else if(i.sourceType === 'OBS_SOURCE_TYPE_SCENE') await walk(i.sourceName, false, depth + 1, prefix + i.sourceName + ' › ');
+    }
+  }
+  await walk(scene, false, 0, '');
+  return out;
+}
+let itemList = [];
+const optVal = i => i.scene + '\u0000' + i.sceneItemId;
+async function loadItems(keepCurrent){
+  itemList = await listItems();
+  $('selItem').innerHTML = itemList.map(i => `<option value="${esc(optVal(i))}">${esc(i.label)}</option>`).join('');
+  if(keepCurrent && item && itemList.some(i => optVal(i) === optVal(item))){ $('selItem').value = optVal(item); return; }
   const saved = LS.get('zoomdock.item:' + scene, '');
-  let pick = items.find(i => i.sourceName === saved) || items.find(i => CAPTURE_KINDS.includes(i.inputKind)) || items[0];
+  let pick = itemList.find(i => i.label === saved || i.sourceName === saved) || itemList.find(i => CAPTURE_KINDS.includes(i.inputKind)) || itemList[0];
   if(!pick){ item = null; showPreviewEmpty('このシーンにソースがありません'); return; }
-  $('selItem').value = pick.sceneItemId;
+  $('selItem').value = optVal(pick);
   await selectItem(pick);
 }
 
 async function selectItem(it){
-  item = { sceneItemId: it.sceneItemId, sourceName: it.sourceName };
-  LS.set('zoomdock.item:' + scene, it.sourceName);
+  item = { sceneItemId: it.sceneItemId, sourceName: it.sourceName, scene: it.scene || scene };
+  LS.set('zoomdock.item:' + scene, it.label || it.sourceName);
   sel = null;
   const st = LS.get(origKey(), null);
   liveRegion = st && st.region ? st.region : null;
@@ -261,7 +280,7 @@ async function selectItem(it){
 
 /* ---------- プレビュー ---------- */
 async function updateSrcSize(){
-  const t = (await req('GetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
+  const t = (await req('GetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
   srcW = t.sourceWidth; srcH = t.sourceHeight;
   let st = item ? LS.get(origKey(), null) : null;
   // 拡大中にOBS側で切り抜きを手動で変えた場合だけ、ユーザーの操作を優先して拡大状態を手放す
@@ -400,7 +419,7 @@ window.addEventListener('mouseup', ev => {
 });
 
 /* ---------- 拡大・復帰 ---------- */
-const origKey = () => `zoomdock.orig:${scene}:${item ? item.sceneItemId : ''}`;
+const origKey = () => `zoomdock.orig:${item ? item.scene : scene}:${item ? item.sceneItemId : ''}`;
 
 function tfFor(r){
   const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
@@ -417,7 +436,7 @@ function tfFor(r){
   };
 }
 function sendTf(tf){
-  return req('SetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId, sceneItemTransform: tf });
+  return req('SetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId, sceneItemTransform: tf });
 }
 function lerpRegion(a, b, e){
   const w = a.w * Math.pow(b.w / a.w, e), h = a.h * Math.pow(b.h / a.h, e);
@@ -452,7 +471,7 @@ async function zoomTo(r){
     r = fitRegion(r);
     let st = LS.get(origKey(), null);
     if(!st){
-      const t = (await req('GetSceneItemTransform', { sceneName: scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
+      const t = (await req('GetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
       st = { tf: t, region: null };
     }
     const from = animRegion || liveRegion || fullRegion();
@@ -529,9 +548,25 @@ $('btnZoom').onclick = () => { if(sel) zoomTo(sel); else showErr('プレビュ�
 $('btnReset').onclick = resetZoom;
 $('selScene').onchange = async () => { scene = $('selScene').value; LS.set('zoomdock.scene', scene); try{ await loadItems(); }catch(e){ showErr(e.message); } };
 $('selItem').onchange = async () => {
-  const id = +$('selItem').value;
-  await selectItem({ sceneItemId: id, sourceName: $('selItem').selectedOptions[0].textContent });
+  const it = itemList.find(i => optVal(i) === $('selItem').value);
+  if(it) await selectItem(it);
 };
+// OBS側でシーン・ソースを追加/削除したら一覧に自動反映（プルダウン操作中は更新しない）
+setInterval(async () => {
+  if(!connected || busyCount || document.activeElement === $('selItem') || document.activeElement === $('selScene')) return;
+  try{
+    const r = await req('GetSceneList');
+    const names = r.scenes.map(s => s.sceneName).reverse();
+    const cur = [...$('selScene').options].map(o => o.value);
+    if(names.join('\u0000') !== cur.join('\u0000')){
+      $('selScene').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
+      if(names.includes(scene)) $('selScene').value = scene;
+      else { scene = r.currentProgramSceneName; $('selScene').value = scene; await loadItems(); return; }
+    }
+    const list = await listItems();
+    if(list.map(optVal).join('|') !== itemList.map(optVal).join('|') || list.map(i => i.label).join('|') !== itemList.map(i => i.label).join('|')) await loadItems(true);
+  }catch(e){}
+}, 3000);
 
 const sp = $('speed');
 sp.value = LS.get('zoomdock.speed', 400);
