@@ -356,7 +356,8 @@ function restoreFields(t, st){
   // 拡大中にOBS側で位置/サイズを変えられていた場合: その位置・表示サイズを保ったまま切り抜きだけ元に戻す
   const cw = t.sourceWidth - (t.cropLeft || 0) - (t.cropRight || 0), chh = t.sourceHeight - (t.cropTop || 0) - (t.cropBottom || 0);
   const ow = t.sourceWidth - f.cropLeft - f.cropRight, oh = t.sourceHeight - f.cropTop - f.cropBottom;
-  f.scaleX = t.scaleX * cw / Math.max(1, ow); f.scaleY = t.scaleY * chh / Math.max(1, oh);
+  const k = cw / Math.max(1, ow);   // 縦横同じ倍率＝比率は絶対に変えない
+  f.scaleX = t.scaleX * k; f.scaleY = t.scaleY * k;
   return f;
 }
 
@@ -472,9 +473,9 @@ const homeKey = k => k.replace('zoomdock.orig:', 'zoomdock.home:');
 const origKey = () => `zoomdock.orig:${item ? item.scene : scene}:${item ? item.sceneItemId : ''}`;
 
 /* 書き込み対象は操作開始時点のソースに固定する（途中でソースを切り替えても別ソースに書き込まない） */
-function makeCtx(){ return { scene: item.scene, id: item.sceneItemId, key: origKey(), srcW, srcH, base }; }
+function makeCtx(){ const st = LS.get(origKey(), null); return { scene: item.scene, id: item.sceneItemId, key: origKey(), srcW, srcH, base, orig: st && st.tf ? st.tf : curTf }; }
 function tfFor(r, c){
-  const srcW = c.srcW, srcH = c.srcH, base = c.base;
+  const srcW = c.srcW, srcH = c.srcH, base = c.base, o = c.orig;
   const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
   const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
   const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
@@ -484,7 +485,8 @@ function tfFor(r, c){
   const B = base ? base.box : { x: 0, y: 0, w: canvasW, h: canvasH };
   return {
     cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb,
-    scaleX: B.w / vw, scaleY: B.h / vh,
+    // 拡大は縦横同じ倍率のみ。元の縦横の比(scaleY/scaleX)は絶対に変えない
+    scaleX: B.w / vw * Math.sign(o.scaleX || 1), scaleY: B.w / vw * Math.abs((o.scaleY || 1) / (o.scaleX || 1)) * Math.sign(o.scaleY || 1),
     positionX: B.x, positionY: B.y, alignment: 5
   };
 }
