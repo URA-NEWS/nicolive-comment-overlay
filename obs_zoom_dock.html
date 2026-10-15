@@ -335,10 +335,6 @@ async function updateSrcSize(){
   const t = (await req('GetSceneItemTransform', { sceneName: item.scene, sceneItemId: item.sceneItemId })).sceneItemTransform;
   srcW = t.sourceWidth; srcH = t.sourceHeight;
   let st = item ? LS.get(origKey(), null) : null;
-  // 拡大中にOBS側で切り抜きを手動で変えた場合だけ、ユーザーの操作を優先して拡大状態を手放す
-  if(st && !busyCount && st.applied && !CROP_KEYS.every(k => Math.round(t[k] || 0) === Math.round(st.applied[k] || 0))){
-    LS.del(origKey()); st = null; liveRegion = null; animRegion = null; updateBadge(); draw();
-  }
   curTf = t;
   base = computeBase(st ? { ...t, ...restoreFields(t, st) } : t);
   return t;
@@ -554,14 +550,25 @@ function cleanTf(t){
 }
 async function resetZoom(){
   if(!item || !connected){ showErr('OBSに未接続です'); return; }
-  if(!LS.get(origKey(), null)){ showErr('このドックで拡大した状態ではないため、何も変更していません'); return; }
   let counted = false;
   try{
     await updateSrcSize();
     const st = LS.get(origKey(), null);
-    if(!st){ showErr('OBS側で切り抜きが変更されているため、今の配置をそのまま維持しました'); return; }
     busyCount++; counted = true;
     const c = makeCtx();
+    if(!st){
+      // 拡大の記録が無い場合でも、切り抜きを全解除して拡大を完全にリセットする（枠・比率・位置は維持）
+      const t = curTf, f = { cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 };
+      if(CROP_KEYS.every(k => !(t[k] > 0))){ showErr('拡大されていません'); return; }
+      if(!isBounded(t)){
+        const vw = Math.max(1, t.sourceWidth - (t.cropLeft || 0) - (t.cropRight || 0));
+        const k = vw / Math.max(1, t.sourceWidth);   // 表示幅を保ち、元の縦横の伸縮比はそのまま
+        f.scaleX = t.scaleX * k; f.scaleY = t.scaleY * k;
+      }
+      await sendTf(f, c);
+      delete animPos[c.key]; liveRegion = null; animRegion = null; updateBadge(); draw(); showErr('');
+      return;
+    }
     const fields = restoreFields(curTf, st);
     const from = animPos[c.key] || st.region;
     if(from && c.srcW){ const done = await animate(from, fullRegion(), +$('speed').value, c); if(!done) return; }
