@@ -286,7 +286,7 @@ function computeBase(t){
     box = { x: b.x + (ba & 1 ? 0 : ba & 2 ? bw - w : (bw - w) / 2), y: b.y + (ba & 4 ? 0 : ba & 8 ? bh - h : (bh - h) / 2), w, h };
   }
   if(!(box.w > 0 && box.h > 0)) box = { x: 0, y: 0, w: canvasW, h: canvasH };
-  return { box, region };
+  return { box, region, bounded: !!t.boundsType && t.boundsType !== 'OBS_BOUNDS_NONE' };
 }
 async function refreshPreview(){
   if(!item || !connected) return;
@@ -375,14 +375,14 @@ function tfFor(r){
   const cl = Math.max(0, Math.round(r.x)), ct = Math.max(0, Math.round(r.y));
   const cr = Math.max(0, Math.round(srcW - r.x - r.w)), cb = Math.max(0, Math.round(srcH - r.y - r.h));
   const vw = Math.max(1, srcW - cl - cr), vh = Math.max(1, srcH - ct - cb);
+  // 枠(バウンディングボックス)付きの配置: 切り抜きだけ変更し、枠・比率・位置などの設定には一切触れない
+  if(base && base.bounded) return { cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb };
+  // 枠なしの配置: 元の表示枠に縦横ぴったり合わせる（回転・枠設定には触れない）
   const B = base ? base.box : { x: 0, y: 0, w: canvasW, h: canvasH };
-  // 縦横それぞれ元の枠にぴったり合わせる＝元の縦横比・伸縮をそのまま維持
-  const sx = B.w / vw, sy = B.h / vh;
   return {
     cropLeft: cl, cropTop: ct, cropRight: cr, cropBottom: cb,
-    scaleX: sx, scaleY: sy,
-    positionX: B.x, positionY: B.y,
-    alignment: 5, rotation: 0, boundsType: 'OBS_BOUNDS_NONE'
+    scaleX: B.w / vw, scaleY: B.h / vh,
+    positionX: B.x, positionY: B.y, alignment: 5
   };
 }
 function sendTf(tf){
